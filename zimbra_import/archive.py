@@ -17,5 +17,5 @@ def unpack_tgz(tgz_path, dest_dir):
     os.makedirs(dest_dir, exist_ok=True)
     with tarfile.open(tgz_path, "r:*") as tar:
         members = _safe_members(tar, dest_dir)
-        tar.extractall(dest_dir, members=members, filter="data")
+        tar.extractall(dest_dir, members=members)
     return dest_dir
