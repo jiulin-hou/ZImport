@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 
 
 def _now():
-    return datetime.utcnow().isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 class TaskStore:
