@@ -1,0 +1,15 @@
+body { font-family: sans-serif; max-width: 720px; margin: 40px auto;
+       color: #222; }
+.card { border: 1px solid #ddd; border-radius: 8px; padding: 24px;
+        margin-bottom: 20px; }
+.hidden { display: none; }
+.err { color: #c00; }
+input, button { font-size: 14px; padding: 6px 8px; margin: 4px 0; }
+input[type=text], input[type=password], #username, #password,
+#folder, #targetAccount { width: 280px; }
+label { display: block; margin: 10px 0; }
+table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+th, td { border: 1px solid #ddd; padding: 6px; font-size: 13px;
+         text-align: left; }
+.bar { background: #eee; border-radius: 4px; overflow: hidden; }
+.bar > div { background: #3a7; height: 14px; }
