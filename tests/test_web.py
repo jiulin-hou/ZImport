@@ -136,3 +136,12 @@ def test_import_rejected_when_queue_full(app, monkeypatch):
         "folder": "Inbox",
     })
     assert resp.status_code == 429
+
+
+def test_upload_chunk_rejects_bad_upload_id(app, monkeypatch):
+    client = _login(app, monkeypatch)
+    resp = client.post("/api/upload/chunk", data={
+        "upload_id": "../../etc", "file_index": "0", "chunk_index": "0",
+        "blob": (io.BytesIO(b"x"), "blob"),
+    }, content_type="multipart/form-data")
+    assert resp.status_code == 400

@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import functools
 
@@ -82,6 +83,8 @@ def _register_uploads(app, cfg, store, login_required):
     @login_required
     def upload_chunk():
         upload_id = request.form["upload_id"]
+        if not _valid_upload_id(upload_id):
+            return jsonify({"error": "无效的 upload_id"}), 400
         file_index = int(request.form["file_index"])
         chunk_index = int(request.form["chunk_index"])
         blob = request.files["blob"].read()
@@ -93,11 +96,20 @@ def _register_uploads(app, cfg, store, login_required):
     @login_required
     def upload_status():
         upload_id = request.args["upload_id"]
+        if not _valid_upload_id(upload_id):
+            return jsonify({"error": "无效的 upload_id"}), 400
         file_index = int(request.args["file_index"])
         total = int(request.args["total_chunks"])
         missing = uploads.missing_chunks(cfg.temp_root, upload_id,
                                          file_index, total)
         return jsonify({"missing": missing})
+
+
+_UPLOAD_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
+def _valid_upload_id(upload_id):
+    return bool(upload_id) and bool(_UPLOAD_ID_RE.match(upload_id))
 
 
 def _queue_limit_for(store, cfg):
@@ -114,6 +126,8 @@ def _register_import(app, cfg, store, login_required):
 
         body = request.get_json(force=True, silent=True) or {}
         upload_id = body["upload_id"]
+        if not _valid_upload_id(upload_id):
+            return jsonify({"error": "无效的 upload_id"}), 400
         files = body.get("files", [])
         folder = body.get("folder") or "Inbox"
 
