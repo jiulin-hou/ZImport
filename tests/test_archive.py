@@ -1,3 +1,4 @@
+import io
 import os
 import tarfile
 import pytest
@@ -8,11 +9,9 @@ def _make_tgz(path, files, fmt=tarfile.PAX_FORMAT):
     """files: dict of arcname -> bytes content."""
     with tarfile.open(path, "w:gz", format=fmt) as tar:
         for arcname, content in files.items():
-            data = content
-            import io
             info = tarfile.TarInfo(name=arcname)
-            info.size = len(data)
-            tar.addfile(info, io.BytesIO(data))
+            info.size = len(content)
+            tar.addfile(info, io.BytesIO(content))
 
 
 def test_unpack_pax_archive(tmp_path):
@@ -29,3 +28,15 @@ def test_unpack_rejects_path_traversal(tmp_path):
     _make_tgz(str(tgz), {"../escape.eml": b"x"})
     with pytest.raises(ValueError):
         archive.unpack_tgz(str(tgz), str(tmp_path / "out2"))
+    assert not (tmp_path / "escape.eml").exists()
+
+
+def test_unpack_rejects_symlink_entry(tmp_path):
+    tgz = tmp_path / "sym.tgz"
+    with tarfile.open(str(tgz), "w:gz") as tar:
+        info = tarfile.TarInfo(name="link")
+        info.type = tarfile.SYMTYPE
+        info.linkname = "../outside"
+        tar.addfile(info)
+    with pytest.raises(ValueError):
+        archive.unpack_tgz(str(tgz), str(tmp_path / "out3"))
