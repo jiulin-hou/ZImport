@@ -145,3 +145,15 @@ def test_upload_chunk_rejects_bad_upload_id(app, monkeypatch):
         "blob": (io.BytesIO(b"x"), "blob"),
     }, content_type="multipart/form-data")
     assert resp.status_code == 400
+
+
+def test_me_returns_identity(app, monkeypatch):
+    client = _login(app, monkeypatch)
+    resp = client.get("/api/me")
+    assert resp.status_code == 200
+    assert resp.get_json()["account"] == "u@d"
+    assert resp.get_json()["is_admin"] is False
+
+
+def test_me_requires_login(app):
+    assert app.test_client().get("/api/me").status_code == 401

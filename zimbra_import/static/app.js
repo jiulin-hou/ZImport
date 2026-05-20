@@ -110,11 +110,7 @@ function statusText(s) {
 }
 
 // 启动时探测是否已登录
-api("/api/tasks").then(r => {
-  if (r.ok) return r.json().then(() => {
-    // 已登录但缺身份信息,简单重新登录;此处直接显示主界面占位
-    $("login").classList.add("hidden");
-    $("main").classList.remove("hidden");
-    refreshTasks();
-  });
+fetch("/api/me").then(r => {
+  if (r.ok) return r.json().then(d => showMain(d.account, d.is_admin));
+  showLogin();
 }).catch(() => showLogin());

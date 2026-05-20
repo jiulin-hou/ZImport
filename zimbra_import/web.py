@@ -53,6 +53,12 @@ def create_app(cfg):
         session.clear()
         return jsonify({"ok": True})
 
+    @app.route("/api/me")
+    @login_required
+    def me():
+        return jsonify({"account": session["account"],
+                        "is_admin": session.get("is_admin", False)})
+
     @app.route("/api/tasks")
     @login_required
     def list_tasks():
