@@ -53,3 +53,22 @@ def test_count_active_and_recover_interrupted(tmp_path):
     store.claim_next()  # t1 -> running
     store.recover_interrupted()  # running -> interrupted
     assert store.get_task(t1)["status"] == "interrupted"
+
+
+def test_purge_old_removes_aged_finished_tasks(tmp_path):
+    import sqlite3
+    store = TaskStore(str(tmp_path / "purge.db"))
+    old = store.create_task("a@d", "a@d", "Inbox", "/tmp/old")
+    store.set_status(old, "done")
+    fresh = store.create_task("b@d", "b@d", "Inbox", "/tmp/fresh")
+    store.set_status(fresh, "done")
+    # backdate the old task's updated_at to 30 days ago
+    conn = sqlite3.connect(str(tmp_path / "purge.db"))
+    conn.execute("UPDATE tasks SET updated_at='2000-01-01T00:00:00' "
+                 "WHERE id=?", (old,))
+    conn.commit()
+    conn.close()
+    removed = store.purge_old(7)
+    assert "/tmp/old" in removed
+    assert store.get_task(old) is None
+    assert store.get_task(fresh) is not None

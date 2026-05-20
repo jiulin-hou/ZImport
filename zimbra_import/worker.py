@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import shutil
 import threading
 
 from zimbra_import import archive, zimbra_auth, zimbra_inject
@@ -43,10 +44,20 @@ def process_task(cfg, store, task):
         store.set_status(tid, "failed", error=str(exc))
 
 
+def _purge(cfg, store):
+    for temp_dir in store.purge_old(cfg.retention_days):
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 def _loop(cfg, store):
+    last_purge = 0.0
     while True:
         task = store.claim_next()
         if task is None:
+            now = time.time()
+            if now - last_purge > 3600:
+                _purge(cfg, store)
+                last_purge = now
             time.sleep(2)
             continue
         process_task(cfg, store, task)

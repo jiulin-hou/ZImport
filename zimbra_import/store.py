@@ -2,7 +2,7 @@ import os
 import json
 import uuid
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (
@@ -133,6 +133,27 @@ class TaskStore:
             conn.execute("UPDATE tasks SET status='interrupted', updated_at=? "
                          "WHERE status='running'", (_now(),))
             conn.commit()
+        finally:
+            conn.close()
+
+    def purge_old(self, retention_days):
+        """Delete finished/failed/interrupted task rows older than
+        retention_days. Returns the list of temp_dir paths of deleted
+        tasks so the caller can remove them from disk."""
+        cutoff = (datetime.now(timezone.utc)
+                  - timedelta(days=retention_days)).isoformat()
+        conn = self._conn()
+        try:
+            rows = conn.execute(
+                "SELECT temp_dir FROM tasks WHERE updated_at < ? "
+                "AND status IN ('done','failed','interrupted')",
+                (cutoff,)).fetchall()
+            conn.execute(
+                "DELETE FROM tasks WHERE updated_at < ? "
+                "AND status IN ('done','failed','interrupted')",
+                (cutoff,))
+            conn.commit()
+            return [r["temp_dir"] for r in rows]
         finally:
             conn.close()
 
