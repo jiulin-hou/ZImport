@@ -81,3 +81,69 @@ class TaskStore:
             return [dict(r) for r in rows]
         finally:
             conn.close()
+
+    def claim_next(self):
+        conn = self._conn()
+        conn.isolation_level = None
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT * FROM tasks WHERE status='queued' "
+                "ORDER BY created_at LIMIT 1").fetchone()
+            if row is None:
+                conn.execute("COMMIT")
+                return None
+            conn.execute("UPDATE tasks SET status='running', updated_at=? "
+                         "WHERE id=?", (_now(), row["id"]))
+            conn.execute("COMMIT")
+            return dict(row)
+        finally:
+            conn.close()
+
+    def set_totals(self, task_id, total):
+        self._update(task_id, {"total": total})
+
+    def update_progress(self, task_id, done, failed):
+        self._update(task_id, {"done": done, "failed": failed})
+
+    def set_failures(self, task_id, failures):
+        self._update(task_id, {"failures": json.dumps(failures,
+                                                      ensure_ascii=False)})
+
+    def set_status(self, task_id, status, error=None, kind=None):
+        fields = {"status": status}
+        if error is not None:
+            fields["error"] = error
+        if kind is not None:
+            fields["kind"] = kind
+        self._update(task_id, fields)
+
+    def count_active(self):
+        conn = self._conn()
+        try:
+            return conn.execute(
+                "SELECT COUNT(*) FROM tasks "
+                "WHERE status IN ('queued','running')").fetchone()[0]
+        finally:
+            conn.close()
+
+    def recover_interrupted(self):
+        conn = self._conn()
+        try:
+            conn.execute("UPDATE tasks SET status='interrupted', updated_at=? "
+                         "WHERE status='running'", (_now(),))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _update(self, task_id, fields):
+        fields = dict(fields)
+        fields["updated_at"] = _now()
+        cols = ", ".join("%s=?" % k for k in fields)
+        conn = self._conn()
+        try:
+            conn.execute("UPDATE tasks SET %s WHERE id=?" % cols,
+                         list(fields.values()) + [task_id])
+            conn.commit()
+        finally:
+            conn.close()

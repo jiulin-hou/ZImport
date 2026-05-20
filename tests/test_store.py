@@ -18,3 +18,38 @@ def test_list_tasks_filters_by_requester(tmp_path):
     store.create_task("c@d", "other@d", "Inbox", "/tmp/c")
     assert len(store.list_tasks("admin@d")) == 2
     assert len(store.list_tasks("other@d")) == 1
+
+
+def test_claim_next_is_fifo_and_marks_running(tmp_path):
+    store = TaskStore(str(tmp_path / "c.db"))
+    t1 = store.create_task("a@d", "a@d", "Inbox", "/tmp/a")
+    t2 = store.create_task("b@d", "b@d", "Inbox", "/tmp/b")
+    claimed = store.claim_next()
+    assert claimed["id"] == t1
+    assert store.get_task(t1)["status"] == "running"
+    assert store.claim_next()["id"] == t2
+    assert store.claim_next() is None
+
+
+def test_progress_and_status_updates(tmp_path):
+    store = TaskStore(str(tmp_path / "p.db"))
+    tid = store.create_task("a@d", "a@d", "Inbox", "/tmp/a")
+    store.set_totals(tid, 10)
+    store.update_progress(tid, done=4, failed=1)
+    store.set_failures(tid, [{"name": "x.eml", "reason": "bad"}])
+    store.set_status(tid, "done")
+    task = store.get_task(tid)
+    assert task["total"] == 10 and task["done"] == 4 and task["failed"] == 1
+    assert task["status"] == "done"
+    import json
+    assert json.loads(task["failures"])[0]["name"] == "x.eml"
+
+
+def test_count_active_and_recover_interrupted(tmp_path):
+    store = TaskStore(str(tmp_path / "r.db"))
+    t1 = store.create_task("a@d", "a@d", "Inbox", "/tmp/a")
+    store.create_task("b@d", "b@d", "Inbox", "/tmp/b")
+    assert store.count_active() == 2
+    store.claim_next()  # t1 -> running
+    store.recover_interrupted()  # running -> interrupted
+    assert store.get_task(t1)["status"] == "interrupted"
