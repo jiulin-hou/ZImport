@@ -38,3 +38,23 @@ def login(cfg, username, password):
     except AuthError:
         raise AuthError("登录失败:账号或密码错误")
     return Identity(is_admin=False, account=username)
+
+
+def _admin_token(cfg):
+    body = {"AuthRequest": {"_jsns": "urn:zimbraAdmin",
+                            "name": cfg.svc_name,
+                            "password": cfg.svc_password}}
+    resp = _soap(cfg.admin_soap_url, body, cfg.verify_tls)
+    return resp["AuthResponse"]["authToken"][0]["_content"]
+
+
+def delegate_token(cfg, target_account):
+    """用服务账号取得目标账户的委托 token。worker 注入前即时调用。"""
+    admin_tok = _admin_token(cfg)
+    header = {"context": {"_jsns": "urn:zimbra",
+                          "authToken": {"_content": admin_tok}}}
+    body = {"DelegateAuthRequest": {
+        "_jsns": "urn:zimbraAdmin",
+        "account": {"by": "name", "_content": target_account}}}
+    resp = _soap(cfg.admin_soap_url, body, cfg.verify_tls, header=header)
+    return resp["DelegateAuthResponse"]["authToken"][0]["_content"]

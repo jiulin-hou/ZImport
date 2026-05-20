@@ -56,3 +56,23 @@ def test_login_bad_credentials(monkeypatch):
     monkeypatch.setattr(zimbra_auth.requests, "post", fake_post)
     with pytest.raises(zimbra_auth.AuthError):
         zimbra_auth.login(_Cfg, "user@d", "wrong")
+
+
+def test_delegate_token(monkeypatch):
+    calls = []
+
+    def fake_post(url, **kw):
+        calls.append(kw.get("json"))
+        body = kw["json"]["Body"]
+        if "AuthRequest" in body:
+            return _Resp(_admin_ok())
+        if "DelegateAuthRequest" in body:
+            return _Resp({"Body": {"DelegateAuthResponse": {
+                "authToken": [{"_content": "DELEGTOK"}]}}})
+        return _Resp(_fault())
+
+    monkeypatch.setattr(zimbra_auth.requests, "post", fake_post)
+    tok = zimbra_auth.delegate_token(_Cfg, "target@d")
+    assert tok == "DELEGTOK"
+    # 第二次调用必须带上 admin token 的 Header
+    assert calls[1]["Header"]["context"]["authToken"]["_content"] == "ADMTOK"
