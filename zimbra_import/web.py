@@ -1,4 +1,5 @@
 import os
+import shutil
 import functools
 
 from flask import Flask, request, session, jsonify, send_from_directory
@@ -99,5 +100,45 @@ def _register_uploads(app, cfg, store, login_required):
         return jsonify({"missing": missing})
 
 
+def _queue_limit_for(store, cfg):
+    """返回当前还能接受的队列余量(供测试 monkeypatch)。"""
+    return cfg.queue_limit - store.count_active()
+
+
 def _register_import(app, cfg, store, login_required):
-    pass  # Task 14 实现
+    @app.route("/api/import", methods=["POST"])
+    @login_required
+    def start_import():
+        if _queue_limit_for(store, cfg) <= 0:
+            return jsonify({"error": "任务队列已满,请稍后再试"}), 429
+
+        body = request.get_json(force=True, silent=True) or {}
+        upload_id = body["upload_id"]
+        files = body.get("files", [])
+        folder = body.get("folder") or "Inbox"
+
+        # 越权防护:管理员可指定目标账户,普通用户强制为本人
+        account = session["account"]
+        if session.get("is_admin") and body.get("account"):
+            account = body["account"]
+
+        # 合并每个文件的分片到该上传的 input 目录
+        for f in files:
+            uploads.merge_file(cfg.temp_root, upload_id, int(f["index"]),
+                               int(f["chunks"]), f["name"])
+
+        # 磁盘空间预检
+        input_path = uploads.input_dir(cfg.temp_root, upload_id)
+        used = sum(os.path.getsize(os.path.join(input_path, n))
+                   for n in os.listdir(input_path))
+        free = shutil.disk_usage(cfg.temp_root).free
+        if used > cfg.max_task_bytes:
+            return jsonify({"error": "本次数据超过单任务大小上限"}), 413
+        if free < used:
+            return jsonify({"error": "服务器临时磁盘空间不足"}), 507
+
+        task_id = store.create_task(
+            account=account, requester=session["account"],
+            target_folder=folder,
+            temp_dir=uploads.upload_dir(cfg.temp_root, upload_id))
+        return jsonify({"task_id": task_id})

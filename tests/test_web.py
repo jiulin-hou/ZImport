@@ -80,3 +80,59 @@ def test_upload_chunk_requires_login(app):
     client = app.test_client()
     resp = client.post("/api/upload/chunk", data={"upload_id": "x"})
     assert resp.status_code == 401
+
+
+def test_import_merges_and_enqueues(app, monkeypatch):
+    client = _login(app, monkeypatch)
+    upload_id = client.post("/api/upload/init", json={}).get_json()["upload_id"]
+    client.post("/api/upload/chunk", data={
+        "upload_id": upload_id, "file_index": "0", "chunk_index": "0",
+        "blob": (io.BytesIO(b"From: a@b\r\n\r\nhi"), "blob"),
+    }, content_type="multipart/form-data")
+
+    resp = client.post("/api/import", json={
+        "upload_id": upload_id,
+        "files": [{"index": 0, "name": "msg.eml", "chunks": 1}],
+        "folder": "Inbox",
+    })
+    assert resp.status_code == 200
+    task_id = resp.get_json()["task_id"]
+    task = client.get("/api/tasks/" + task_id).get_json()
+    assert task["status"] == "queued"
+    assert task["account"] == "u@d"
+
+
+def test_normal_user_cannot_target_other_account(app, monkeypatch):
+    client = _login(app, monkeypatch)
+    upload_id = client.post("/api/upload/init", json={}).get_json()["upload_id"]
+    client.post("/api/upload/chunk", data={
+        "upload_id": upload_id, "file_index": "0", "chunk_index": "0",
+        "blob": (io.BytesIO(b"x"), "blob"),
+    }, content_type="multipart/form-data")
+    resp = client.post("/api/import", json={
+        "upload_id": upload_id,
+        "files": [{"index": 0, "name": "m.eml", "chunks": 1}],
+        "folder": "Inbox",
+        "account": "victim@d",          # 普通用户试图指定他人
+    })
+    task_id = resp.get_json()["task_id"]
+    # 后端强制改写为登录账户
+    assert client.get("/api/tasks/" + task_id).get_json()["account"] == "u@d"
+
+
+def test_import_rejected_when_queue_full(app, monkeypatch):
+    app_cfg_full = app
+    # 把 queue_limit 调到 0 触发拒绝
+    client = _login(app, monkeypatch)
+    monkeypatch.setattr(web, "_queue_limit_for", lambda store, cfg: 0)
+    upload_id = client.post("/api/upload/init", json={}).get_json()["upload_id"]
+    client.post("/api/upload/chunk", data={
+        "upload_id": upload_id, "file_index": "0", "chunk_index": "0",
+        "blob": (io.BytesIO(b"x"), "blob"),
+    }, content_type="multipart/form-data")
+    resp = client.post("/api/import", json={
+        "upload_id": upload_id,
+        "files": [{"index": 0, "name": "m.eml", "chunks": 1}],
+        "folder": "Inbox",
+    })
+    assert resp.status_code == 429
