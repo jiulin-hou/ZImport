@@ -40,3 +40,20 @@ def test_unpack_rejects_symlink_entry(tmp_path):
         tar.addfile(info)
     with pytest.raises(ValueError):
         archive.unpack_tgz(str(tgz), str(tmp_path / "out3"))
+
+
+def test_detect_eml_bundle(tmp_path):
+    d = tmp_path / "b1"
+    d.mkdir()
+    (d / "1.eml").write_bytes(b"x")
+    (d / "2.eml").write_bytes(b"y")
+    assert archive.detect_kind(str(d)) == "eml-bundle"
+
+
+def test_detect_zimbra_export(tmp_path):
+    d = tmp_path / "b2"
+    sub = d / "Inbox"
+    sub.mkdir(parents=True)
+    (sub / "100").write_bytes(b"msg")
+    (sub / "100.meta").write_bytes(b"<meta/>")
+    assert archive.detect_kind(str(d)) == "zimbra-export"
