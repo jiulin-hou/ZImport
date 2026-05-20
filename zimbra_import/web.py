@@ -71,7 +71,32 @@ def create_app(cfg):
 
 
 def _register_uploads(app, cfg, store, login_required):
-    pass  # Task 13 实现
+    @app.route("/api/upload/init", methods=["POST"])
+    @login_required
+    def upload_init():
+        upload_id = uploads.new_upload(cfg.temp_root)
+        return jsonify({"upload_id": upload_id})
+
+    @app.route("/api/upload/chunk", methods=["POST"])
+    @login_required
+    def upload_chunk():
+        upload_id = request.form["upload_id"]
+        file_index = int(request.form["file_index"])
+        chunk_index = int(request.form["chunk_index"])
+        blob = request.files["blob"].read()
+        uploads.save_chunk(cfg.temp_root, upload_id, file_index,
+                           chunk_index, blob)
+        return jsonify({"ok": True})
+
+    @app.route("/api/upload/status")
+    @login_required
+    def upload_status():
+        upload_id = request.args["upload_id"]
+        file_index = int(request.args["file_index"])
+        total = int(request.args["total_chunks"])
+        missing = uploads.missing_chunks(cfg.temp_root, upload_id,
+                                         file_index, total)
+        return jsonify({"missing": missing})
 
 
 def _register_import(app, cfg, store, login_required):
