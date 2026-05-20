@@ -1,0 +1,12 @@
+[Unit]
+Description=Zimbra Import Web
+After=network.target
+
+[Service]
+User=zimbra-import
+WorkingDirectory=/opt/zimbra-import
+ExecStart=/opt/zimbra-import/venv/bin/python deploy/run_web.py /etc/zimbra-import/config.ini
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
