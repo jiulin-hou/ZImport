@@ -6,6 +6,12 @@
 2. 运行 `bash deploy/release.sh X.Y.Z` —— 自动跑测试、写版本号、提交、
    打 tag、推送 main 与 tag、生成 `dist/zimport-X.Y.Z.tar.gz`
 
+## v1.0.1 — 2026-05-22
+
+- 新增一键发版脚本 `deploy/release.sh`
+- 新增项目 `README.md`,含新机器下载与部署指引
+- `.gitignore` 忽略 `dist/`(发版生成的交付包目录)
+
 ## v1.0.0 — 2026-05-22
 
 首个版本。
