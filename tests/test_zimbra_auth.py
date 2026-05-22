@@ -1,5 +1,5 @@
 import pytest
-from zimbra_import import zimbra_auth
+from zimport import zimbra_auth
 
 
 class _Resp:

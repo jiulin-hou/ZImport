@@ -2,7 +2,7 @@ import io
 import os
 import tarfile
 import pytest
-from zimbra_import import archive
+from zimport import archive
 
 
 def _make_tgz(path, files, fmt=tarfile.PAX_FORMAT):

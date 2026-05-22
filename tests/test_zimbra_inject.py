@@ -1,5 +1,5 @@
 import pytest
-from zimbra_import import zimbra_inject
+from zimport import zimbra_inject
 
 
 class _Cfg:

@@ -1,4 +1,4 @@
-from zimbra_import.store import TaskStore
+from zimport.store import TaskStore
 
 
 def test_create_and_get_task(tmp_path):

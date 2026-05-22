@@ -5,8 +5,8 @@ import functools
 
 from flask import Flask, request, session, jsonify, send_from_directory
 
-from zimbra_import import zimbra_auth, uploads, archive
-from zimbra_import.store import TaskStore
+from zimport import zimbra_auth, uploads, archive
+from zimport.store import TaskStore
 
 _STATIC = os.path.join(os.path.dirname(__file__), "static")
 

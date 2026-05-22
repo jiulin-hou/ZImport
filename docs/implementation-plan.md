@@ -8,33 +8,33 @@
 
 **Tech Stack:** Python 3.6+、Flask(`<2.1` 兼容 CentOS 7)、requests、标准库 `tarfile`/`sqlite3`/`email`、pytest;前端原生 JS 单页。
 
-设计依据见 `docs/superpowers/specs/2026-05-20-zimbra-import-page-design.md`。
+设计依据见 `docs/superpowers/specs/2026-05-20-zimport-page-design.md`。
 
 ---
 
 ## 文件结构
 
-所有路径相对项目根目录 `zimbra-import/`。
+所有路径相对项目根目录 `zimport/`。
 
 | 文件 | 职责 |
 |---|---|
 | `requirements.txt` | 依赖声明 |
 | `config.example.ini` | 配置模板 |
-| `zimbra_import/__init__.py` | 包标记 |
-| `zimbra_import/config.py` | 读取 ini 配置 |
-| `zimbra_import/archive.py` | 解包 tgz、判别类型、归一化(核心) |
-| `zimbra_import/store.py` | SQLite 任务队列与进度状态 |
-| `zimbra_import/uploads.py` | 分片接收、断点续传、合并 |
-| `zimbra_import/zimbra_auth.py` | SOAP 用户登录验证 + 服务账号委托认证 |
-| `zimbra_import/zimbra_inject.py` | Zimbra REST 注入(eml 逐封 / tgz 整包) |
-| `zimbra_import/worker.py` | 后台队列消费进程 |
-| `zimbra_import/web.py` | Flask 应用:登录/上传/任务 API |
-| `zimbra_import/static/index.html` | 单页前端 |
-| `zimbra_import/static/app.js` | 前端逻辑:登录、分片上传、进度轮询 |
-| `zimbra_import/static/style.css` | 样式 |
+| `zimport/__init__.py` | 包标记 |
+| `zimport/config.py` | 读取 ini 配置 |
+| `zimport/archive.py` | 解包 tgz、判别类型、归一化(核心) |
+| `zimport/store.py` | SQLite 任务队列与进度状态 |
+| `zimport/uploads.py` | 分片接收、断点续传、合并 |
+| `zimport/zimbra_auth.py` | SOAP 用户登录验证 + 服务账号委托认证 |
+| `zimport/zimbra_inject.py` | Zimbra REST 注入(eml 逐封 / tgz 整包) |
+| `zimport/worker.py` | 后台队列消费进程 |
+| `zimport/web.py` | Flask 应用:登录/上传/任务 API |
+| `zimport/static/index.html` | 单页前端 |
+| `zimport/static/app.js` | 前端逻辑:登录、分片上传、进度轮询 |
+| `zimport/static/style.css` | 样式 |
 | `tests/test_*.py` | 单元/集成测试 |
-| `deploy/zimbra-import-web.service` | web 进程 systemd 单元 |
-| `deploy/zimbra-import-worker.service` | worker 进程 systemd 单元 |
+| `deploy/zimport-web.service` | web 进程 systemd 单元 |
+| `deploy/zimport-worker.service` | worker 进程 systemd 单元 |
 | `deploy/README.md` | 部署说明 |
 
 **共享约定(贯穿所有任务,务必一致):**
@@ -50,21 +50,21 @@
 ## Task 1: 项目脚手架与配置模块
 
 **Files:**
-- Create: `zimbra-import/requirements.txt`
-- Create: `zimbra-import/config.example.ini`
-- Create: `zimbra-import/zimbra_import/__init__.py`
-- Create: `zimbra-import/zimbra_import/config.py`
-- Create: `zimbra-import/tests/__init__.py`
-- Test: `zimbra-import/tests/test_config.py`
+- Create: `zimport/requirements.txt`
+- Create: `zimport/config.example.ini`
+- Create: `zimport/zimport/__init__.py`
+- Create: `zimport/zimport/config.py`
+- Create: `zimport/tests/__init__.py`
+- Test: `zimport/tests/test_config.py`
 
 - [ ] **Step 1: 初始化项目目录与 git**
 
 ```bash
-mkdir -p zimbra-import/zimbra_import/static zimbra-import/tests zimbra-import/deploy
-cd zimbra-import
+mkdir -p zimport/zimport/static zimport/tests zimport/deploy
+cd zimport
 git init
 printf '%s\n' '__pycache__/' '*.pyc' '.pytest_cache/' 'venv/' '*.db' 'tmp/' > .gitignore
-touch zimbra_import/__init__.py tests/__init__.py
+touch zimport/__init__.py tests/__init__.py
 ```
 
 - [ ] **Step 2: 写依赖与配置模板**
@@ -94,8 +94,8 @@ name = importsvc@msauto.com.cn
 password = CHANGE-ME
 
 [storage]
-temp_root = /var/lib/zimbra-import/tmp
-db_path = /var/lib/zimbra-import/tasks.db
+temp_root = /var/lib/zimport/tmp
+db_path = /var/lib/zimport/tasks.db
 max_task_bytes = 10737418240
 retention_days = 7
 
@@ -114,7 +114,7 @@ chunk_size = 10485760
 `tests/test_config.py`:
 ```python
 import textwrap
-from zimbra_import.config import Config
+from zimport.config import Config
 
 
 def test_config_loads_all_fields(tmp_path):
@@ -153,12 +153,12 @@ def test_config_loads_all_fields(tmp_path):
 
 - [ ] **Step 4: 运行测试确认失败**
 
-Run: `cd zimbra-import && python -m pytest tests/test_config.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'zimbra_import.config'`
+Run: `cd zimport && python -m pytest tests/test_config.py -v`
+Expected: FAIL — `ModuleNotFoundError: No module named 'zimport.config'`
 
 - [ ] **Step 5: 实现 config.py**
 
-`zimbra_import/config.py`:
+`zimport/config.py`:
 ```python
 import configparser
 
@@ -204,8 +204,8 @@ git commit -m "chore: project scaffold and config module"
 ## Task 2: archive.py — 安全解包 tgz
 
 **Files:**
-- Create: `zimbra-import/zimbra_import/archive.py`
-- Test: `zimbra-import/tests/test_archive.py`
+- Create: `zimport/zimport/archive.py`
+- Test: `zimport/tests/test_archive.py`
 
 - [ ] **Step 1: 写失败测试**
 
@@ -214,7 +214,7 @@ git commit -m "chore: project scaffold and config module"
 import os
 import tarfile
 import pytest
-from zimbra_import import archive
+from zimport import archive
 
 
 def _make_tgz(path, files, fmt=tarfile.PAX_FORMAT):
@@ -247,11 +247,11 @@ def test_unpack_rejects_path_traversal(tmp_path):
 - [ ] **Step 2: 运行测试确认失败**
 
 Run: `python -m pytest tests/test_archive.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'zimbra_import.archive'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'zimport.archive'`
 
 - [ ] **Step 3: 实现 unpack_tgz**
 
-`zimbra_import/archive.py`:
+`zimport/archive.py`:
 ```python
 import os
 import tarfile
@@ -292,8 +292,8 @@ git add -A && git commit -m "feat: safe tgz extraction with path-traversal guard
 ## Task 3: archive.py — 判别归档类型
 
 **Files:**
-- Modify: `zimbra-import/zimbra_import/archive.py`
-- Test: `zimbra-import/tests/test_archive.py`
+- Modify: `zimport/zimport/archive.py`
+- Test: `zimport/tests/test_archive.py`
 
 - [ ] **Step 1: 追加失败测试**
 
@@ -319,7 +319,7 @@ def test_detect_zimbra_export(tmp_path):
 - [ ] **Step 2: 运行测试确认失败**
 
 Run: `python -m pytest tests/test_archive.py -k detect -v`
-Expected: FAIL — `AttributeError: module 'zimbra_import.archive' has no attribute 'detect_kind'`
+Expected: FAIL — `AttributeError: module 'zimport.archive' has no attribute 'detect_kind'`
 
 - [ ] **Step 3: 实现 detect_kind**
 
@@ -353,8 +353,8 @@ git add -A && git commit -m "feat: detect eml-bundle vs zimbra-export archive"
 ## Task 4: archive.py — 归一化
 
 **Files:**
-- Modify: `zimbra-import/zimbra_import/archive.py`
-- Test: `zimbra-import/tests/test_archive.py`
+- Modify: `zimport/zimport/archive.py`
+- Test: `zimport/tests/test_archive.py`
 
 - [ ] **Step 1: 追加失败测试**
 
@@ -479,14 +479,14 @@ git add -A && git commit -m "feat: normalize archives, repack zimbra-export with
 ## Task 5: store.py — 任务表与创建/查询
 
 **Files:**
-- Create: `zimbra-import/zimbra_import/store.py`
-- Test: `zimbra-import/tests/test_store.py`
+- Create: `zimport/zimport/store.py`
+- Test: `zimport/tests/test_store.py`
 
 - [ ] **Step 1: 写失败测试**
 
 `tests/test_store.py`:
 ```python
-from zimbra_import.store import TaskStore
+from zimport.store import TaskStore
 
 
 def test_create_and_get_task(tmp_path):
@@ -511,11 +511,11 @@ def test_list_tasks_filters_by_requester(tmp_path):
 - [ ] **Step 2: 运行测试确认失败**
 
 Run: `python -m pytest tests/test_store.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'zimbra_import.store'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'zimport.store'`
 
 - [ ] **Step 3: 实现 store.py(建表 + 创建/查询)**
 
-`zimbra_import/store.py`:
+`zimport/store.py`:
 ```python
 import os
 import json
@@ -618,8 +618,8 @@ git add -A && git commit -m "feat: SQLite task store with create/get/list"
 ## Task 6: store.py — 调度与进度更新
 
 **Files:**
-- Modify: `zimbra-import/zimbra_import/store.py`
-- Test: `zimbra-import/tests/test_store.py`
+- Modify: `zimport/zimport/store.py`
+- Test: `zimport/tests/test_store.py`
 
 - [ ] **Step 1: 追加失败测试**
 
@@ -752,14 +752,14 @@ git add -A && git commit -m "feat: task scheduling, progress updates, crash reco
 ## Task 7: uploads.py — 分片接收与合并
 
 **Files:**
-- Create: `zimbra-import/zimbra_import/uploads.py`
-- Test: `zimbra-import/tests/test_uploads.py`
+- Create: `zimport/zimport/uploads.py`
+- Test: `zimport/tests/test_uploads.py`
 
 - [ ] **Step 1: 写失败测试**
 
 `tests/test_uploads.py`:
 ```python
-from zimbra_import import uploads
+from zimport import uploads
 
 
 def test_chunk_save_resume_and_merge(tmp_path):
@@ -801,11 +801,11 @@ def test_filename_sanitized_on_merge(tmp_path):
 - [ ] **Step 2: 运行测试确认失败**
 
 Run: `python -m pytest tests/test_uploads.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'zimbra_import.uploads'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'zimport.uploads'`
 
 - [ ] **Step 3: 实现 uploads.py**
 
-`zimbra_import/uploads.py`:
+`zimport/uploads.py`:
 ```python
 import os
 import uuid
@@ -876,15 +876,15 @@ git add -A && git commit -m "feat: chunked upload receive, resume and merge"
 ## Task 8: zimbra_auth.py — 用户登录验证
 
 **Files:**
-- Create: `zimbra-import/zimbra_import/zimbra_auth.py`
-- Test: `zimbra-import/tests/test_zimbra_auth.py`
+- Create: `zimport/zimport/zimbra_auth.py`
+- Test: `zimport/tests/test_zimbra_auth.py`
 
 - [ ] **Step 1: 写失败测试**
 
 `tests/test_zimbra_auth.py`:
 ```python
 import pytest
-from zimbra_import import zimbra_auth
+from zimport import zimbra_auth
 
 
 class _Resp:
@@ -946,11 +946,11 @@ def test_login_bad_credentials(monkeypatch):
 - [ ] **Step 2: 运行测试确认失败**
 
 Run: `python -m pytest tests/test_zimbra_auth.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'zimbra_import.zimbra_auth'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'zimport.zimbra_auth'`
 
 - [ ] **Step 3: 实现 login**
 
-`zimbra_import/zimbra_auth.py`:
+`zimport/zimbra_auth.py`:
 ```python
 import collections
 import requests
@@ -1010,8 +1010,8 @@ git add -A && git commit -m "feat: Zimbra SOAP user login with admin detection"
 ## Task 9: zimbra_auth.py — 服务账号委托认证
 
 **Files:**
-- Modify: `zimbra-import/zimbra_import/zimbra_auth.py`
-- Test: `zimbra-import/tests/test_zimbra_auth.py`
+- Modify: `zimport/zimport/zimbra_auth.py`
+- Test: `zimport/tests/test_zimbra_auth.py`
 
 - [ ] **Step 1: 追加失败测试**
 
@@ -1082,15 +1082,15 @@ git add -A && git commit -m "feat: service-account delegated auth for injection"
 ## Task 10: zimbra_inject.py — REST 注入
 
 **Files:**
-- Create: `zimbra-import/zimbra_import/zimbra_inject.py`
-- Test: `zimbra-import/tests/test_zimbra_inject.py`
+- Create: `zimport/zimport/zimbra_inject.py`
+- Test: `zimport/tests/test_zimbra_inject.py`
 
 - [ ] **Step 1: 写失败测试**
 
 `tests/test_zimbra_inject.py`:
 ```python
 import pytest
-from zimbra_import import zimbra_inject
+from zimport import zimbra_inject
 
 
 class _Cfg:
@@ -1152,11 +1152,11 @@ def test_inject_tgz_builds_correct_request(tmp_path, monkeypatch):
 - [ ] **Step 2: 运行测试确认失败**
 
 Run: `python -m pytest tests/test_zimbra_inject.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'zimbra_import.zimbra_inject'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'zimport.zimbra_inject'`
 
 - [ ] **Step 3: 实现 zimbra_inject.py**
 
-`zimbra_import/zimbra_inject.py`:
+`zimport/zimbra_inject.py`:
 ```python
 import requests
 
@@ -1203,16 +1203,16 @@ git add -A && git commit -m "feat: Zimbra REST injection for eml and tgz"
 ## Task 11: worker.py — 后台任务处理
 
 **Files:**
-- Create: `zimbra-import/zimbra_import/worker.py`
-- Test: `zimbra-import/tests/test_worker.py`
+- Create: `zimport/zimport/worker.py`
+- Test: `zimport/tests/test_worker.py`
 
 - [ ] **Step 1: 写失败测试**
 
 `tests/test_worker.py`:
 ```python
 import os
-from zimbra_import import worker, archive
-from zimbra_import.store import TaskStore
+from zimport import worker, archive
+from zimport.store import TaskStore
 
 
 class _Cfg:
@@ -1288,20 +1288,20 @@ def test_process_task_marks_failed_on_unpack_error(tmp_path, monkeypatch):
 - [ ] **Step 2: 运行测试确认失败**
 
 Run: `python -m pytest tests/test_worker.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'zimbra_import.worker'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'zimport.worker'`
 
 - [ ] **Step 3: 实现 worker.py**
 
-`zimbra_import/worker.py`:
+`zimport/worker.py`:
 ```python
 import os
 import sys
 import time
 import threading
 
-from zimbra_import import archive, zimbra_auth, zimbra_inject
-from zimbra_import.config import Config
-from zimbra_import.store import TaskStore
+from zimport import archive, zimbra_auth, zimbra_inject
+from zimport.config import Config
+from zimport.store import TaskStore
 
 
 def process_task(cfg, store, task):
@@ -1380,15 +1380,15 @@ git add -A && git commit -m "feat: background worker processing tasks from queue
 ## Task 12: web.py — Flask 应用与登录
 
 **Files:**
-- Create: `zimbra-import/zimbra_import/web.py`
-- Test: `zimbra-import/tests/test_web.py`
+- Create: `zimport/zimport/web.py`
+- Test: `zimport/tests/test_web.py`
 
 - [ ] **Step 1: 写失败测试**
 
 `tests/test_web.py`:
 ```python
 import pytest
-from zimbra_import import web, zimbra_auth
+from zimport import web, zimbra_auth
 
 
 class _Cfg:
@@ -1439,19 +1439,19 @@ def test_tasks_requires_login(app):
 - [ ] **Step 2: 运行测试确认失败**
 
 Run: `python -m pytest tests/test_web.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'zimbra_import.web'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'zimport.web'`
 
 - [ ] **Step 3: 实现 web.py(应用工厂 + 登录 + 会话守卫)**
 
-`zimbra_import/web.py`:
+`zimport/web.py`:
 ```python
 import os
 import functools
 
 from flask import Flask, request, session, jsonify, send_from_directory
 
-from zimbra_import import zimbra_auth, uploads, archive
-from zimbra_import.store import TaskStore
+from zimport import zimbra_auth, uploads, archive
+from zimport.store import TaskStore
 
 _STATIC = os.path.join(os.path.dirname(__file__), "static")
 
@@ -1541,8 +1541,8 @@ git add -A && git commit -m "feat: Flask app factory, login and session guard"
 ## Task 13: web.py — 上传端点
 
 **Files:**
-- Modify: `zimbra-import/zimbra_import/web.py`
-- Test: `zimbra-import/tests/test_web.py`
+- Modify: `zimport/zimport/web.py`
+- Test: `zimport/tests/test_web.py`
 
 - [ ] **Step 1: 追加失败测试**
 
@@ -1638,8 +1638,8 @@ git add -A && git commit -m "feat: chunked upload endpoints with resume support"
 ## Task 14: web.py — 导入入队与任务查询
 
 **Files:**
-- Modify: `zimbra-import/zimbra_import/web.py`
-- Test: `zimbra-import/tests/test_web.py`
+- Modify: `zimport/zimport/web.py`
+- Test: `zimport/tests/test_web.py`
 
 - [ ] **Step 1: 追加失败测试**
 
@@ -1770,15 +1770,15 @@ git add -A && git commit -m "feat: import enqueue with auth enforcement and guar
 ## Task 15: 前端单页
 
 **Files:**
-- Create: `zimbra-import/zimbra_import/static/index.html`
-- Create: `zimbra-import/zimbra_import/static/app.js`
-- Create: `zimbra-import/zimbra_import/static/style.css`
+- Create: `zimport/zimport/static/index.html`
+- Create: `zimport/zimport/static/app.js`
+- Create: `zimport/zimport/static/style.css`
 
 > 前端为浏览器单页,无单元测试框架;验证方式为 Step 4 的手动浏览器测试。
 
 - [ ] **Step 1: 写 index.html**
 
-`zimbra_import/static/index.html`:
+`zimport/static/index.html`:
 ```html
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -1824,7 +1824,7 @@ git add -A && git commit -m "feat: import enqueue with auth enforcement and guar
 
 - [ ] **Step 2: 写 style.css**
 
-`zimbra_import/static/style.css`:
+`zimport/static/style.css`:
 ```css
 body { font-family: sans-serif; max-width: 720px; margin: 40px auto;
        color: #222; }
@@ -1845,7 +1845,7 @@ th, td { border: 1px solid #ddd; padding: 6px; font-size: 13px;
 
 - [ ] **Step 3: 写 app.js**
 
-`zimbra_import/static/app.js`:
+`zimport/static/app.js`:
 ```javascript
 const CHUNK = 10 * 1024 * 1024; // 10MB
 let pollTimer = null;
@@ -1971,7 +1971,7 @@ api("/api/tasks").then(r => {
 
 - [ ] **Step 4: 手动浏览器验证**
 
-启动 web 进程:`cd zimbra-import && cp config.example.ini config.ini`(填入测试值;无 Zimbra 时可临时 monkeypatch,或直接在有 Zimbra 的服务器上做),运行 `FLASK_APP=... python -c "from zimbra_import.config import Config; from zimbra_import.web import create_app; create_app(Config('config.ini')).run(port=8088)"`。
+启动 web 进程:`cd zimport && cp config.example.ini config.ini`(填入测试值;无 Zimbra 时可临时 monkeypatch,或直接在有 Zimbra 的服务器上做),运行 `FLASK_APP=... python -c "from zimport.config import Config; from zimport.web import create_app; create_app(Config('config.ini')).run(port=8088)"`。
 
 浏览器打开 `http://127.0.0.1:8088`,确认:登录表单显示;登录后出现导入表单;选文件后能看到分片上传进度;任务出现在「我的任务」表格并随轮询刷新进度条。
 
@@ -1988,20 +1988,20 @@ git add -A && git commit -m "feat: single-page frontend with chunked upload and 
 ## Task 16: 部署单元与说明
 
 **Files:**
-- Create: `zimbra-import/deploy/zimbra-import-web.service`
-- Create: `zimbra-import/deploy/zimbra-import-worker.service`
-- Create: `zimbra-import/deploy/run_web.py`
-- Create: `zimbra-import/deploy/README.md`
+- Create: `zimport/deploy/zimport-web.service`
+- Create: `zimport/deploy/zimport-worker.service`
+- Create: `zimport/deploy/run_web.py`
+- Create: `zimport/deploy/README.md`
 
 - [ ] **Step 1: 写 web 启动脚本**
 
 `deploy/run_web.py`:
 ```python
 import sys
-from zimbra_import.config import Config
-from zimbra_import.web import create_app
+from zimport.config import Config
+from zimport.web import create_app
 
-cfg = Config(sys.argv[1] if len(sys.argv) > 1 else "/etc/zimbra-import/config.ini")
+cfg = Config(sys.argv[1] if len(sys.argv) > 1 else "/etc/zimport/config.ini")
 app = create_app(cfg)
 
 if __name__ == "__main__":
@@ -2010,32 +2010,32 @@ if __name__ == "__main__":
 
 - [ ] **Step 2: 写 systemd 单元**
 
-`deploy/zimbra-import-web.service`:
+`deploy/zimport-web.service`:
 ```ini
 [Unit]
 Description=Zimbra Import Web
 After=network.target
 
 [Service]
-User=zimbra-import
-WorkingDirectory=/opt/zimbra-import
-ExecStart=/opt/zimbra-import/venv/bin/python deploy/run_web.py /etc/zimbra-import/config.ini
+User=zimport
+WorkingDirectory=/opt/zimport
+ExecStart=/opt/zimport/venv/bin/python deploy/run_web.py /etc/zimport/config.ini
 Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-`deploy/zimbra-import-worker.service`:
+`deploy/zimport-worker.service`:
 ```ini
 [Unit]
 Description=Zimbra Import Worker
 After=network.target
 
 [Service]
-User=zimbra-import
-WorkingDirectory=/opt/zimbra-import
-ExecStart=/opt/zimbra-import/venv/bin/python -m zimbra_import.worker /etc/zimbra-import/config.ini
+User=zimport
+WorkingDirectory=/opt/zimport
+ExecStart=/opt/zimport/venv/bin/python -m zimport.worker /etc/zimport/config.ini
 Restart=on-failure
 
 [Install]
@@ -2049,21 +2049,21 @@ WantedBy=multi-user.target
 # 部署说明
 
 ## 1. 系统用户与目录
-    useradd -r -s /sbin/nologin zimbra-import
-    mkdir -p /opt/zimbra-import /etc/zimbra-import /var/lib/zimbra-import
-    chown -R zimbra-import: /var/lib/zimbra-import
+    useradd -r -s /sbin/nologin zimport
+    mkdir -p /opt/zimport /etc/zimport /var/lib/zimport
+    chown -R zimport: /var/lib/zimport
 
 ## 2. 代码与依赖
-    cp -r zimbra-import/* /opt/zimbra-import/
-    cd /opt/zimbra-import
+    cp -r zimport/* /opt/zimport/
+    cd /opt/zimport
     python3 -m venv venv
     venv/bin/pip install -r requirements.txt
-    chown -R zimbra-import: /opt/zimbra-import
+    chown -R zimport: /opt/zimport
 
 ## 3. 配置
-    cp config.example.ini /etc/zimbra-import/config.ini
-    chmod 600 /etc/zimbra-import/config.ini
-    chown zimbra-import: /etc/zimbra-import/config.ini
+    cp config.example.ini /etc/zimport/config.ini
+    chmod 600 /etc/zimport/config.ini
+    chown zimport: /etc/zimport/config.ini
 编辑 config.ini:填入 secret_key(随机串)、service_account 的账号密码。
 
 ## 4. 服务账号
@@ -2075,7 +2075,7 @@ WantedBy=multi-user.target
 ## 5. 启动
     cp deploy/*.service /etc/systemd/system/
     systemctl daemon-reload
-    systemctl enable --now zimbra-import-web zimbra-import-worker
+    systemctl enable --now zimport-web zimport-worker
 
 ## 6. 反向代理(经 Zimbra nginx 暴露 HTTPS)
 web 进程只监听 127.0.0.1。在 Zimbra nginx 上加一个 location 反代到
@@ -2087,7 +2087,7 @@ config.ini 含服务账号密码,文件权限须为 600;定期轮换该账号密
 
 - [ ] **Step 4: 验证单元文件语法**
 
-Run: `python -c "import configparser; c=configparser.ConfigParser(); c.read('deploy/zimbra-import-web.service'); print(c.get('Service','ExecStart'))"`
+Run: `python -c "import configparser; c=configparser.ConfigParser(); c.read('deploy/zimport-web.service'); print(c.get('Service','ExecStart'))"`
 Expected: 打印出 ExecStart 行,无异常
 
 - [ ] **Step 5: 提交**
@@ -2101,7 +2101,7 @@ git add -A && git commit -m "chore: systemd units and deployment guide"
 ## Task 17: 集成测试与端到端验证
 
 **Files:**
-- Create: `zimbra-import/tests/test_integration.py`
+- Create: `zimport/tests/test_integration.py`
 
 > 集成测试需要真实 Zimbra 与一个测试账户,默认跳过;在服务器上带环境变量运行。
 
@@ -2121,13 +2121,13 @@ import io
 import tarfile
 import pytest
 
-from zimbra_import.config import Config
-from zimbra_import import archive, zimbra_auth, zimbra_inject
+from zimport.config import Config
+from zimport import archive, zimbra_auth, zimbra_inject
 
 RUN = os.environ.get("ZIMBRA_IT") == "1"
 pytestmark = pytest.mark.skipif(not RUN, reason="set ZIMBRA_IT=1 to run")
 
-CONFIG = os.environ.get("ZIMBRA_IT_CONFIG", "/etc/zimbra-import/config.ini")
+CONFIG = os.environ.get("ZIMBRA_IT_CONFIG", "/etc/zimport/config.ini")
 TARGET = "importtest@msauto.com.cn"
 
 
@@ -2162,13 +2162,13 @@ def test_normalize_and_inject_pax_bundle(tmp_path):
 
 - [ ] **Step 3: 运行单元测试全集确认无回归**
 
-Run: `cd zimbra-import && python -m pytest tests/ -v`
+Run: `cd zimport && python -m pytest tests/ -v`
 Expected: 所有单元测试 PASS,`test_integration.py` 显示 skipped
 
 - [ ] **Step 4: 在服务器上运行集成测试**
 
 在 Zimbra 服务器、已部署配置后运行:
-Run: `ZIMBRA_IT=1 ZIMBRA_IT_CONFIG=/etc/zimbra-import/config.ini python -m pytest tests/test_integration.py -v`
+Run: `ZIMBRA_IT=1 ZIMBRA_IT_CONFIG=/etc/zimport/config.ini python -m pytest tests/test_integration.py -v`
 Expected: 2 passed;随后登录 `importtest@msauto.com.cn` 的 webmail,确认 Inbox 中出现 "IT probe" 与 "IT pax probe" 两封邮件
 
 - [ ] **Step 5: 端到端手动验证(完整 tgz 路径)**

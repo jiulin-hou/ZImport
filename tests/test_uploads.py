@@ -1,4 +1,4 @@
-from zimbra_import import uploads
+from zimport import uploads
 
 
 def test_chunk_save_resume_and_merge(tmp_path):

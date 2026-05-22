@@ -3,13 +3,13 @@ import io
 import tarfile
 import pytest
 
-from zimbra_import.config import Config
-from zimbra_import import archive, zimbra_auth, zimbra_inject
+from zimport.config import Config
+from zimport import archive, zimbra_auth, zimbra_inject
 
 RUN = os.environ.get("ZIMBRA_IT") == "1"
 pytestmark = pytest.mark.skipif(not RUN, reason="set ZIMBRA_IT=1 to run")
 
-CONFIG = os.environ.get("ZIMBRA_IT_CONFIG", "/etc/zimbra-import/config.ini")
+CONFIG = os.environ.get("ZIMBRA_IT_CONFIG", "/etc/zimport/config.ini")
 TARGET = "importtest@msauto.com.cn"
 
 

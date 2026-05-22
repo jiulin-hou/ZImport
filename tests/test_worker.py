@@ -1,6 +1,6 @@
 import os
-from zimbra_import import worker, archive
-from zimbra_import.store import TaskStore
+from zimport import worker, archive
+from zimport.store import TaskStore
 
 
 class _Cfg:

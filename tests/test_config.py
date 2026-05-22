@@ -1,5 +1,5 @@
 import textwrap
-from zimbra_import.config import Config
+from zimport.config import Config
 
 
 def test_config_loads_all_fields(tmp_path):

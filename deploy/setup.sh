@@ -3,11 +3,11 @@
 # 环境准备脚本 —— 在 CentOS 7 上为 Zimbra 导入工具自动准备运行环境。
 #
 # 它做这些(全部幂等,可重复运行):
-#   1. 创建系统用户 zimbra-import
+#   1. 创建系统用户 zimport
 #   2. 创建 /opt /etc /var 目录
 #   3. yum 安装编译依赖
 #   4. 并行编译安装 Python 3.11(make altinstall,不覆盖系统 python3)
-#   5. 复制代码到 /opt/zimbra-import,建 venv 并装 pip 依赖
+#   5. 复制代码到 /opt/zimport,建 venv 并装 pip 依赖
 #   6. 放置 config.ini 模板(已存在则保留不覆盖)
 #
 # 它【不】做(需要你的输入或属于环境相关决策):
@@ -22,10 +22,10 @@
 set -euo pipefail
 
 PYTHON_VERSION=3.11.9
-APP_DIR=/opt/zimbra-import
-ETC_DIR=/etc/zimbra-import
-VAR_DIR=/var/lib/zimbra-import
-RUN_USER=zimbra-import
+APP_DIR=/opt/zimport
+ETC_DIR=/etc/zimport
+VAR_DIR=/var/lib/zimport
+RUN_USER=zimport
 PYBIN=/usr/local/bin/python3.11
 
 log()  { printf '\033[1;32m[setup]\033[0m %s\n' "$*"; }
@@ -95,7 +95,7 @@ fi
 
 # --- 自检:venv 能否导入应用 --------------------------------------------
 log "自检:导入应用模块"
-( cd "$APP_DIR" && "$APP_DIR/venv/bin/python" -c "import zimbra_import.web, zimbra_import.worker; print('  模块导入 OK')" )
+( cd "$APP_DIR" && "$APP_DIR/venv/bin/python" -c "import zimport.web, zimport.worker; print('  模块导入 OK')" )
 
 log "环境准备完成。"
 cat <<EOF
@@ -114,7 +114,7 @@ cat <<EOF
   3. 安装并启动服务:
        cp $APP_DIR/deploy/*.service /etc/systemd/system/
        systemctl daemon-reload
-       systemctl enable --now zimbra-import-web zimbra-import-worker
+       systemctl enable --now zimport-web zimport-worker
 
   4. 在 Zimbra nginx 上加反向代理,把 127.0.0.1:8088 经 HTTPS 暴露出去。
 ================================================================

@@ -4,9 +4,9 @@ import time
 import shutil
 import threading
 
-from zimbra_import import archive, zimbra_auth, zimbra_inject
-from zimbra_import.config import Config
-from zimbra_import.store import TaskStore
+from zimport import archive, zimbra_auth, zimbra_inject
+from zimport.config import Config
+from zimport.store import TaskStore
 
 
 def process_task(cfg, store, task):

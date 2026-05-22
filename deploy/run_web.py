@@ -1,8 +1,8 @@
 import sys
-from zimbra_import.config import Config
-from zimbra_import.web import create_app
+from zimport.config import Config
+from zimport.web import create_app
 
-cfg = Config(sys.argv[1] if len(sys.argv) > 1 else "/etc/zimbra-import/config.ini")
+cfg = Config(sys.argv[1] if len(sys.argv) > 1 else "/etc/zimport/config.ini")
 app = create_app(cfg)
 
 if __name__ == "__main__":

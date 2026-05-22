@@ -1,7 +1,7 @@
 import io
 
 import pytest
-from zimbra_import import web, zimbra_auth
+from zimport import web, zimbra_auth
 
 
 class _Cfg:
