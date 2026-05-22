@@ -20,24 +20,47 @@ def process_task(cfg, store, task):
 
         if norm.kind == "zimbra-export":
             store.set_totals(tid, 1)
+            # tgz 自带 resolve=skip,Zimbra 内部按 Message-ID 去重
             zimbra_inject.inject_tgz(cfg, task["account"], token,
                                      norm.repacked_tgz)
             store.update_progress(tid, done=1, failed=0)
         else:
             store.set_totals(tid, len(norm.eml_paths))
-            done = failed = 0
+            done = failed = skipped = 0
             failures = []
+            seen_local = set()  # 同批内重复(同 Message-ID)
             for path in norm.eml_paths:
+                name = os.path.basename(path)
                 try:
+                    if cfg.dedupe:
+                        mid = zimbra_inject.read_message_id(path)
+                        if mid:
+                            if mid in seen_local:
+                                skipped += 1
+                                failures.append({"name": name,
+                                                 "reason": "duplicate (same batch)"})
+                                store.update_progress(tid, done=done,
+                                                      failed=failed,
+                                                      skipped=skipped)
+                                continue
+                            seen_local.add(mid)
+                            if zimbra_inject.message_exists(cfg, token, mid):
+                                skipped += 1
+                                failures.append({"name": name,
+                                                 "reason": "duplicate (already in mailbox)"})
+                                store.update_progress(tid, done=done,
+                                                      failed=failed,
+                                                      skipped=skipped)
+                                continue
                     zimbra_inject.inject_eml(cfg, task["account"],
                                              task["target_folder"],
                                              token, path)
                     done += 1
                 except zimbra_inject.InjectError as exc:
                     failed += 1
-                    failures.append({"name": os.path.basename(path),
-                                     "reason": str(exc)})
-                store.update_progress(tid, done=done, failed=failed)
+                    failures.append({"name": name, "reason": str(exc)})
+                store.update_progress(tid, done=done, failed=failed,
+                                      skipped=skipped)
             store.set_failures(tid, failures)
         store.set_status(tid, "done")
     except Exception as exc:  # noqa: BLE001 - top-level catch, any failure recorded

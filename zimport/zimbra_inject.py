@@ -1,8 +1,50 @@
 import requests
+from email.parser import BytesParser
+from email.policy import compat32
 
 
 class InjectError(Exception):
     pass
+
+
+def read_message_id(eml_path):
+    """从 eml 头部读 Message-ID,失败/空返回 ""。仅解 header 不读全文,
+    省内存。"""
+    try:
+        with open(eml_path, "rb") as fh:
+            msg = BytesParser(policy=compat32).parse(fh, headersonly=True)
+        mid = msg.get("Message-ID") or msg.get("Message-Id") or ""
+        return mid.strip()
+    except Exception:
+        return ""
+
+
+def message_exists(cfg, token, message_id):
+    """以委托 token 调 SOAP SearchRequest,看该 Message-ID 是否已在邮箱内
+    任意位置存在。SOAP 失败一律视为"不存在"以免阻塞导入(返回 False)。"""
+    if not message_id:
+        return False
+    # Zimbra search 用 messageid:"..." 查特定 Message-ID,去掉双引号防注入
+    safe = message_id.replace('"', '').replace('\\', '')
+    query = 'messageid:"%s"' % safe
+    header = {"context": {"_jsns": "urn:zimbra",
+                          "authToken": {"_content": token}}}
+    body = {"SearchRequest": {
+        "_jsns": "urn:zimbraMail",
+        "query": query, "limit": 1, "types": "message"}}
+    try:
+        r = requests.post(cfg.soap_url,
+                          json={"Header": header, "Body": body},
+                          verify=cfg.verify_tls, timeout=30)
+        data = r.json()
+    except Exception:
+        return False
+    inner = data.get("Body", {})
+    if "Fault" in inner:
+        return False
+    resp = inner.get("SearchResponse", {})
+    hits = resp.get("m") or resp.get("hit") or []
+    return len(hits) > 0
 
 
 def inject_eml(cfg, account, folder, token, eml_path):

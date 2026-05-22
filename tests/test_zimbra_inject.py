@@ -4,6 +4,7 @@ from zimport import zimbra_inject
 
 class _Cfg:
     rest_base = "https://h:8443"
+    soap_url = "https://h:8443/service/soap"
     verify_tls = False
 
 
@@ -40,6 +41,59 @@ def test_inject_eml_raises_on_http_error(tmp_path, monkeypatch):
                         lambda url, **kw: _Resp(500))
     with pytest.raises(zimbra_inject.InjectError):
         zimbra_inject.inject_eml(_Cfg, "u@d", "Inbox", "TOK", str(eml))
+
+
+def test_read_message_id(tmp_path):
+    eml = tmp_path / "m.eml"
+    eml.write_bytes(
+        b"From: a@b\r\n"
+        b"To: c@d\r\n"
+        b"Message-ID: <abc.123@example.com>\r\n"
+        b"\r\nhello body")
+    assert zimbra_inject.read_message_id(str(eml)) == "<abc.123@example.com>"
+
+
+def test_read_message_id_missing(tmp_path):
+    eml = tmp_path / "m.eml"
+    eml.write_bytes(b"From: a@b\r\n\r\nbody")
+    assert zimbra_inject.read_message_id(str(eml)) == ""
+
+
+class _SoapResp:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+
+def test_message_exists_hit(monkeypatch):
+    monkeypatch.setattr(zimbra_inject.requests, "post",
+                        lambda *a, **kw: _SoapResp({"Body": {
+                            "SearchResponse": {"m": [{"id": "1"}]}}}))
+    assert zimbra_inject.message_exists(_Cfg, "TOK", "<id@x>") is True
+
+
+def test_message_exists_miss(monkeypatch):
+    monkeypatch.setattr(zimbra_inject.requests, "post",
+                        lambda *a, **kw: _SoapResp({"Body": {
+                            "SearchResponse": {}}}))
+    assert zimbra_inject.message_exists(_Cfg, "TOK", "<id@x>") is False
+
+
+def test_message_exists_empty_id_skips_call(monkeypatch):
+    def boom(*a, **kw):
+        raise AssertionError("network must not be called for empty id")
+    monkeypatch.setattr(zimbra_inject.requests, "post", boom)
+    assert zimbra_inject.message_exists(_Cfg, "TOK", "") is False
+
+
+def test_message_exists_fault_returns_false(monkeypatch):
+    # SOAP 失败时不阻塞,默认 False(让 inject 继续走 — 重复了再让 Zimbra 拒)
+    monkeypatch.setattr(zimbra_inject.requests, "post",
+                        lambda *a, **kw: _SoapResp({"Body": {"Fault": {
+                            "Reason": {"Text": "boom"}}}}))
+    assert zimbra_inject.message_exists(_Cfg, "TOK", "<id@x>") is False
 
 
 def test_inject_tgz_builds_correct_request(tmp_path, monkeypatch):

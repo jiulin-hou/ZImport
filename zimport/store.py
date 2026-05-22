@@ -16,12 +16,18 @@ CREATE TABLE IF NOT EXISTS tasks (
   total INTEGER DEFAULT 0,
   done INTEGER DEFAULT 0,
   failed INTEGER DEFAULT 0,
+  skipped INTEGER DEFAULT 0,
   error TEXT,
   failures TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
 """
+
+# v1.1 新增 skipped 列 —— 对老 DB 用 ALTER TABLE 兼容
+_MIGRATIONS = [
+    "ALTER TABLE tasks ADD COLUMN skipped INTEGER DEFAULT 0",
+]
 
 
 def _now():
@@ -38,6 +44,11 @@ class TaskStore:
         try:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(SCHEMA)
+            for stmt in _MIGRATIONS:
+                try:
+                    conn.execute(stmt)
+                except sqlite3.OperationalError:
+                    pass  # 列已存在
             conn.commit()
         finally:
             conn.close()
@@ -103,8 +114,11 @@ class TaskStore:
     def set_totals(self, task_id, total):
         self._update(task_id, {"total": total})
 
-    def update_progress(self, task_id, done, failed):
-        self._update(task_id, {"done": done, "failed": failed})
+    def update_progress(self, task_id, done, failed, skipped=None):
+        fields = {"done": done, "failed": failed}
+        if skipped is not None:
+            fields["skipped"] = skipped
+        self._update(task_id, fields)
 
     def set_failures(self, task_id, failures):
         self._update(task_id, {"failures": json.dumps(failures,

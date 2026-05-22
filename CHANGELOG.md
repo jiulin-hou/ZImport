@@ -6,6 +6,42 @@
 2. 运行 `bash deploy/release.sh X.Y.Z` —— 自动跑测试、写版本号、提交、
    打 tag、推送 main 与 tag、生成 `dist/zimport-X.Y.Z.tar.gz`
 
+## v1.1.0 — 2026-05-22
+
+UI 与可部署性大版本。
+
+**前端 / 后端**
+
+- 目标文件夹改为按账户实际拉取的下拉(`/api/folders`,委托认证调
+  `GetFolderRequest`)。管理员切目标账户后自动刷新
+- 管理员目标账户改为 datalist autocomplete,输入 2+ 字符触发
+  `/api/admin/accounts/search`(SOAP `SearchDirectoryRequest`,limit 20)
+- 修跨账户残留 bug:登录/登出时 reset 前端状态(文件选择、任务表、轮询
+  定时器、错误提示等),不再泄露到下一个账户
+- UI 重写:CSS 变量、卡片阴影、status chip、toast 错误提示、上传进度条、
+  暗色模式
+
+**eml 去重**
+
+- 单封 eml 注入前按 `Message-ID` 双层去重:同一批 eml 内部用 set 去重(零网络
+  开销);邮箱内已存在则 SOAP `SearchRequest` 查到后跳过
+- 任务新增 `skipped` 计数列(老 DB 用 ALTER TABLE 自动升级);任务表多一列「跳过」
+- `[scheduler] dedupe = true/false` 配置开关,默认 true。tgz 路径不受影响,
+  仍走 Zimbra 原生 `resolve=skip`
+
+**部署**
+
+- `setup.sh` 处理 CentOS/RHEL 7 OpenSSL 1.0.2 太旧的问题(自动装 EPEL +
+  openssl11,让 Python 3.11 编出 `_ssl`)
+- `setup.sh` yum 依赖补全:sqlite/readline/ncurses/libuuid/gdbm-devel
+- `setup.sh` 自动化:`secret_key` 随机生成;同机 Zimbra 时探测域名 + 自动
+  `zmprov ca` 创建服务账号
+- `zimport-web.service` 加 `Environment=PYTHONPATH=/opt/zimport`(没这行时
+  `python deploy/run_web.py` 的 sys.path 找不到 zimport 包,启动失败)
+- 新增 `deploy/setup-proxy.sh`:Zimbra 同机 nginx 反代脚本化(改 template +
+  zmproxyctl restart,`--port` 可配)
+- 新增 `deploy/update.sh`:从开发机推代码 + 重启服务的升级路径
+
 ## v1.0.1 — 2026-05-22
 
 - 新增一键发版脚本 `deploy/release.sh`

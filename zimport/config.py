@@ -22,4 +22,5 @@ class Config:
         self.retention_days = cp.getint("storage", "retention_days", fallback=7)
         self.concurrency = cp.getint("scheduler", "concurrency", fallback=1)
         self.queue_limit = cp.getint("scheduler", "queue_limit", fallback=50)
+        self.dedupe = cp.getboolean("scheduler", "dedupe", fallback=True)
         self.chunk_size = cp.getint("upload", "chunk_size", fallback=10 * 1024 * 1024)
