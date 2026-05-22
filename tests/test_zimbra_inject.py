@@ -74,6 +74,24 @@ def test_message_exists_hit(monkeypatch):
     assert zimbra_inject.message_exists(_Cfg, "TOK", "<id@x>") is True
 
 
+def test_message_exists_uses_msgid_operator_without_angle_brackets(monkeypatch):
+    """Zimbra search 操作符是 msgid:(不是 messageid:),且 query 里**不能**
+    带 <>,否则 hit 永远为 0。这两个细节误一个就静默失效,所以单独守住。"""
+    captured = {}
+
+    def fake_post(url, **kw):
+        captured["query"] = kw["json"]["Body"]["SearchRequest"]["query"]
+        return _SoapResp({"Body": {"SearchResponse": {}}})
+
+    monkeypatch.setattr(zimbra_inject.requests, "post", fake_post)
+    zimbra_inject.message_exists(_Cfg, "TOK", "<abc@example.com>")
+    assert captured["query"].startswith("msgid:"), \
+        "operator must be msgid: not messageid:"
+    assert "<" not in captured["query"] and ">" not in captured["query"], \
+        "angle brackets must be stripped"
+    assert "abc@example.com" in captured["query"]
+
+
 def test_message_exists_miss(monkeypatch):
     monkeypatch.setattr(zimbra_inject.requests, "post",
                         lambda *a, **kw: _SoapResp({"Body": {

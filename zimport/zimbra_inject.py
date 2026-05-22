@@ -24,9 +24,10 @@ def message_exists(cfg, token, message_id):
     任意位置存在。SOAP 失败一律视为"不存在"以免阻塞导入(返回 False)。"""
     if not message_id:
         return False
-    # Zimbra search 用 messageid:"..." 查特定 Message-ID,去掉双引号防注入
-    safe = message_id.replace('"', '').replace('\\', '')
-    query = 'messageid:"%s"' % safe
+    # Zimbra 的操作符是 msgid:(不是 messageid:),且查询字符串里**不能**带
+    # 尖括号 —— 必须剥掉 RFC 822 Message-ID 头那对 <>,否则 hit 为 0。
+    safe = message_id.strip().strip('<>').replace('"', '').replace('\\', '')
+    query = 'msgid:"%s"' % safe
     header = {"context": {"_jsns": "urn:zimbra",
                           "authToken": {"_content": token}}}
     body = {"SearchRequest": {
