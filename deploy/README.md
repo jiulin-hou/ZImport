@@ -1,90 +1,79 @@
 # 部署说明
 
-本工具需要 Python 3.8+。CentOS 7 自带的是 Python 3.6,所以要并行安装一个较新的
-Python —— 不要替换系统 python3(yum 等系统工具依赖它)。venv 完全隔离,对 Zimbra 无影响。
+本工具默认部署在 Zimbra 同机(CentOS/RHEL 7 起)。venv 完全隔离,对 Zimbra 无影响。
+脚本均幂等,重跑无害。
 
-## 快速部署:用 setup.sh
+## 首次部署 —— 一条命令
 
-环境准备(系统用户、目录、编译依赖、Python 3.11、venv、依赖、配置模板)已全部
-脚本化。解包项目后,以 root 执行:
+以 root 在目标机解包代码后执行:
 
     bash deploy/setup.sh
 
-脚本是幂等的,可重复运行。它完成后会打印剩下的手工步骤(下面第 1–4 节)。
+`setup.sh` 自动完成:
 
-`setup.sh` 自动做:
-- 创建系统用户 `zimport`
-- 创建 `/opt/zimport`、`/etc/zimport`、`/var/lib/zimport`
-- yum 安装编译依赖
-- 并行编译安装 Python 3.11(`make altinstall`,不覆盖系统 python3)
-- 复制代码到 `/opt/zimport`,建 venv 并安装 pip 依赖
-- 放置 `/etc/zimport/config.ini` 模板(已存在则保留不覆盖)
+- 系统用户 `zimport`、目录 `/opt/zimport` `/etc/zimport` `/var/lib/zimport`
+- yum 编译依赖(含 Python stdlib 可选模块要的 sqlite/readline/ncurses 等)
+- **CentOS/RHEL 7 自动处理 OpenSSL 1.0.2 太旧**:装 EPEL + openssl11,让 Python
+  3.11 能编出 `_ssl` 模块(否则 pip 走不了 HTTPS)
+- 编译 Python 3.11(`make altinstall`,不替换系统 python3)
+- 建 venv + 装依赖
+- **生成 `/etc/zimport/config.ini`**:`secret_key` 随机生成;若本机即 Zimbra
+  主机,自动探测域名填好 SOAP URL,**并自动 `zmprov ca` 创建服务账号**
+  `importsvc@<domain>` + 标记为 admin
 
-`setup.sh` 不做(需要你的输入,见下文):填写配置、创建 Zimbra 服务账号、启动服务、配反代。
+## 启用 systemd 服务
 
----
+`setup.sh` 跑完后执行:
 
-## setup.sh 之后的手工步骤
-
-### 1. 填写配置
-    vi /etc/zimport/config.ini
-- `secret_key`:换成随机串,如 `openssl rand -hex 32`
-- `[service_account]` 的 `name` / `password`:服务账号的账号密码
-
-### 2. 创建 Zimbra 服务账号
-专用管理员账号,供 worker 做委托认证:
-
-    su - zimbra -c "zmprov ca importsvc@msauto.com.cn '<强密码>'"
-    su - zimbra -c "zmprov ma importsvc@msauto.com.cn zimbraIsAdminAccount TRUE"
-
-把账号密码写入 `config.ini` 的 `[service_account]`。
-
-### 3. 启动服务
-    cp /opt/zimport/deploy/*.service /etc/systemd/system/
+    cp /opt/zimport/deploy/zimport-web.service \
+       /opt/zimport/deploy/zimport-worker.service \
+       /etc/systemd/system/
     systemctl daemon-reload
     systemctl enable --now zimport-web zimport-worker
 
-### 4. 反向代理(经 Zimbra nginx 暴露 HTTPS)
-web 进程只监听 127.0.0.1。在 Zimbra nginx 上加一个 location 反代到
-`127.0.0.1:8088`,复用已有的 Let's Encrypt 证书,对外只走 HTTPS。
+## 反向代理(Zimbra 同机)
 
----
+在 Zimbra nginx 上开一个新端口反代到 `127.0.0.1:8088`:
+
+    bash /opt/zimport/deploy/setup-proxy.sh                # 默认 29443
+    bash /opt/zimport/deploy/setup-proxy.sh --port 9443    # 换端口
+
+脚本会:
+
+1. 写 `/opt/zimbra/conf/nginx/includes/nginx.conf.zimport`(独立 server 块,复用
+   Zimbra 自己的证书 `nginx.crt` / `nginx.key`)
+2. 在 `nginx.conf.web.template` 末尾加一行 `include`(首次会备份原版到 `.bak.orig`)
+3. `zmproxyctl restart` 让 nginx 加载
+
+⚠️ Zimbra 升级可能覆盖 template,届时重跑 `setup-proxy.sh` 即可恢复。
+
+## 升级到新版本
+
+从开发机一条命令推送 + 重启:
+
+    bash deploy/update.sh root@<target-host>
+
+它会 `git ls-files | tar` 把当前代码 scp 过去,远程停服务 → 解包 → 比较
+requirements.txt 决定是否 `pip install` → 重启服务。venv 完整保留。
+
+## 不是 Zimbra 同机的情况
+
+如果 ZImport 要装在一台 _可访问 Zimbra_ 的独立机器,而非 Zimbra 主机本身:
+
+- `setup.sh` 不会自动探测 Zimbra/创建服务账号 —— 会提示你**手动**做:
+  - 在 Zimbra 上 `zmprov ca importsvc@<domain> '<密码>'`
+  - `zmprov ma importsvc@<domain> zimbraIsAdminAccount TRUE`
+  - 把账号/密码写到 `/etc/zimport/config.ini`
+  - 把 `[zimbra]` 里的 URL 改成实际 Zimbra 主机地址
+- 反代要自己解决 —— `setup-proxy.sh` 只在 Zimbra 同机用;独立机请自己装
+  nginx 或 caddy
 
 ## 维护
 
-- **服务账号凭据轮换**:`config.ini` 含服务账号密码,文件权限须为 `600`;
-  定期轮换该账号密码并同步更新 `config.ini`。
-- **手工运行环境准备**:若不想用 `setup.sh`,可参照其内容逐步手工执行。
-
----
-
-## 手工部署(不使用 setup.sh)
-
-如需逐步手工操作,等价步骤:
-
-    # 1. 系统用户与目录
-    useradd -r -s /sbin/nologin zimport
-    mkdir -p /opt/zimport /etc/zimport /var/lib/zimport
-    chown -R zimport: /var/lib/zimport
-
-    # 2. 并行安装 Python 3.11
-    yum groupinstall -y "Development Tools"
-    yum install -y openssl-devel bzip2-devel libffi-devel zlib-devel xz-devel curl
-    cd /usr/src
-    curl -fLO https://www.python.org/ftp/python/3.11.9/Python-3.11.9.tgz
-    tar xf Python-3.11.9.tgz && cd Python-3.11.9
-    ./configure && make -j"$(nproc)" && make altinstall
-
-    # 3. 代码与依赖
-    cp -r zimport/. /opt/zimport/
-    cd /opt/zimport
-    /usr/local/bin/python3.11 -m venv venv
-    venv/bin/pip install -r requirements.txt
-    chown -R zimport: /opt/zimport
-
-    # 4. 配置模板
-    cp config.example.ini /etc/zimport/config.ini
-    chmod 600 /etc/zimport/config.ini
-    chown zimport: /etc/zimport/config.ini
-
-然后照上面的「手工步骤 1–4」继续。
+- **服务账号密码轮换**:`/etc/zimport/config.ini` 含服务账号密码,文件权限须为
+  `600`;定期轮换并同步更新 config.ini(然后 `systemctl restart zimport-web
+  zimport-worker`)。
+- **看日志**:
+  - `journalctl -u zimport-web -f`
+  - `journalctl -u zimport-worker -f`
+  - `/opt/zimbra/log/nginx.access.log` (反代日志)

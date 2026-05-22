@@ -5,6 +5,7 @@ After=network.target
 [Service]
 User=zimport
 WorkingDirectory=/opt/zimport
+Environment=PYTHONPATH=/opt/zimport
 ExecStart=/opt/zimport/venv/bin/python deploy/run_web.py /etc/zimport/config.ini
 Restart=on-failure
 
