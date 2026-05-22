@@ -113,6 +113,52 @@ def test_process_task_dedup_against_mailbox(tmp_path, monkeypatch):
     assert result["done"] == 0 and result["skipped"] == 1 and result["failed"] == 0
 
 
+def test_inject_retries_on_transient(monkeypatch):
+    """transient 错误(network:/5xx/429/408)走 retry,最终成功记为 done。"""
+    monkeypatch.setattr(worker.time, "sleep", lambda s: None)
+    attempts = [0]
+
+    def fake_inject(cfg, a, f, tok, p):
+        attempts[0] += 1
+        if attempts[0] < 2:
+            raise worker.zimbra_inject.InjectError("HTTP 502: bad gw")
+
+    monkeypatch.setattr(worker.zimbra_inject, "inject_eml", fake_inject)
+    worker._inject_eml_with_retry(None, "a@d", "Inbox", "T", "/p.eml")
+    assert attempts[0] == 2
+
+
+def test_inject_no_retry_on_permanent(monkeypatch):
+    """4xx 业务错(非 408/429)不重试,立刻抛出。"""
+    monkeypatch.setattr(worker.time, "sleep", lambda s: None)
+    attempts = [0]
+
+    def fake_inject(cfg, a, f, tok, p):
+        attempts[0] += 1
+        raise worker.zimbra_inject.InjectError("HTTP 403: forbidden")
+
+    monkeypatch.setattr(worker.zimbra_inject, "inject_eml", fake_inject)
+    with pytest.raises(worker.zimbra_inject.InjectError):
+        worker._inject_eml_with_retry(None, "a@d", "Inbox", "T", "/p.eml")
+    assert attempts[0] == 1  # 没重试
+
+
+def test_inject_retries_capped(monkeypatch):
+    """transient 错误持续不好时,最多 1+max_retries 次,然后抛出。"""
+    monkeypatch.setattr(worker.time, "sleep", lambda s: None)
+    attempts = [0]
+
+    def fake_inject(cfg, a, f, tok, p):
+        attempts[0] += 1
+        raise worker.zimbra_inject.InjectError("network: down")
+
+    monkeypatch.setattr(worker.zimbra_inject, "inject_eml", fake_inject)
+    with pytest.raises(worker.zimbra_inject.InjectError):
+        worker._inject_eml_with_retry(None, "a@d", "Inbox", "T", "/p",
+                                       max_retries=2)
+    assert attempts[0] == 3  # 1 + 2 retries
+
+
 def test_process_task_marks_failed_on_unpack_error(tmp_path, monkeypatch):
     store = TaskStore(str(tmp_path / "w3.db"))
     temp_dir = tmp_path / "task3"

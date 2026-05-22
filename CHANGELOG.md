@@ -28,6 +28,22 @@ UI 与可部署性大版本。
 - 任务新增 `skipped` 计数列(老 DB 用 ALTER TABLE 自动升级);任务表多一列「跳过」
 - `[scheduler] dedupe = true/false` 配置开关,默认 true。tgz 路径不受影响,
   仍走 Zimbra 原生 `resolve=skip`
+- Zimbra 查询用 `msgid:` 操作符并剥掉 Message-ID 头的 `<>`(`messageid:` 是
+  无效操作符,`msgid:"<id>"` 也命不中,均会静默 0 hit)
+
+**失败处理与重试**
+
+- 单封 eml 失败时自动 retry 最多 2 次,仅对 transient(`network:`、`HTTP 5xx`、
+  `HTTP 429`、`HTTP 408`)生效,业务错(如 4xx)立即抛出;退避 1.5s / 2.25s
+- 修隐藏 bug:`zimbra_inject.inject_eml/tgz` 现在把 `requests.RequestException`
+  wrap 成 `InjectError`,网络抖不再让整任务变 `failed`(此前会丢已注入进度)
+- 新增 `POST /api/tasks/<id>/retry`:对 `failed`/`interrupted` 任务一键重新
+  入队(复用原 `temp_dir`)。`requester` 或 admin 可调用;`temp_dir` 已被
+  purge 时返回 410
+- worker 处理任务时先清 `work/` 目录,确保 retry 任务的 `archive.normalize`
+  在干净环境跑
+- 前端任务行点击可展开,显示 `error`(任务级)+ `failures`(单封 name/reason
+  列表)+ 失败/中断任务的「重试」按钮
 
 **部署**
 

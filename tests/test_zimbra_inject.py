@@ -43,6 +43,34 @@ def test_inject_eml_raises_on_http_error(tmp_path, monkeypatch):
         zimbra_inject.inject_eml(_Cfg, "u@d", "Inbox", "TOK", str(eml))
 
 
+def test_inject_eml_wraps_network_exception(tmp_path, monkeypatch):
+    """requests.RequestException 必须被 wrap 成 InjectError,
+    否则 worker 会把整任务 fail 而不是单封 fail。"""
+    eml = tmp_path / "m.eml"
+    eml.write_bytes(b"x")
+
+    def boom(*a, **kw):
+        raise zimbra_inject.requests.ConnectionError("conn refused")
+
+    monkeypatch.setattr(zimbra_inject.requests, "post", boom)
+    with pytest.raises(zimbra_inject.InjectError) as ei:
+        zimbra_inject.inject_eml(_Cfg, "u@d", "Inbox", "TOK", str(eml))
+    assert "network:" in str(ei.value)
+
+
+def test_inject_tgz_wraps_network_exception(tmp_path, monkeypatch):
+    tgz = tmp_path / "a.tgz"
+    tgz.write_bytes(b"X")
+
+    def boom(*a, **kw):
+        raise zimbra_inject.requests.Timeout("timed out")
+
+    monkeypatch.setattr(zimbra_inject.requests, "post", boom)
+    with pytest.raises(zimbra_inject.InjectError) as ei:
+        zimbra_inject.inject_tgz(_Cfg, "u@d", "TOK", str(tgz))
+    assert "network:" in str(ei.value)
+
+
 def test_read_message_id(tmp_path):
     eml = tmp_path / "m.eml"
     eml.write_bytes(

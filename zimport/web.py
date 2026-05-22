@@ -73,6 +73,28 @@ def create_app(cfg):
             return jsonify({"error": "任务不存在"}), 404
         return jsonify(task)
 
+    @app.route("/api/tasks/<task_id>/retry", methods=["POST"])
+    @login_required
+    def retry_task(task_id):
+        task = store.get_task(task_id)
+        if task is None:
+            return jsonify({"error": "任务不存在"}), 404
+        if (task["requester"] != session["account"]
+                and not session.get("is_admin")):
+            return jsonify({"error": "无权重试此任务"}), 403
+        if task["status"] not in ("failed", "interrupted"):
+            return jsonify({"error": "仅失败/中断的任务能重试"}), 400
+        if not os.path.isdir(task["temp_dir"]):
+            return jsonify({"error": "任务文件已被清理,无法重试"}), 410
+        if _queue_limit_for(store, cfg) <= 0:
+            return jsonify({"error": "任务队列已满,请稍后再试"}), 429
+        new_id = store.create_task(
+            account=task["account"],
+            requester=session["account"],
+            target_folder=task["target_folder"],
+            temp_dir=task["temp_dir"])
+        return jsonify({"task_id": new_id})
+
     @app.route("/api/folders")
     @login_required
     def folders():

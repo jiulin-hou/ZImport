@@ -73,6 +73,78 @@ def test_admin_account_search_requires_admin(app, monkeypatch):
     assert resp.status_code == 403
 
 
+def test_retry_creates_new_task_for_failed(app, monkeypatch, tmp_path):
+    """已 failed 的任务、temp_dir 还在 -> retry 返回新 task_id 并入队。"""
+    from zimport.store import TaskStore
+    # _Cfg.db_path 在 app fixture 里写到 tmp_path / "t.db"
+    db_path = str(tmp_path / "t.db")
+    store = TaskStore(db_path)
+    temp_dir = tmp_path / "td"
+    temp_dir.mkdir()
+    old_id = store.create_task(account="u@d", requester="u@d",
+                                target_folder="Inbox",
+                                temp_dir=str(temp_dir))
+    store.set_status(old_id, "failed", error="boom")
+
+    client = _login(app, monkeypatch)
+    resp = client.post("/api/tasks/" + old_id + "/retry")
+    assert resp.status_code == 200, resp.get_json()
+    new_id = resp.get_json()["task_id"]
+    assert new_id != old_id
+    new = store.get_task(new_id)
+    assert new["status"] == "queued"
+    assert new["temp_dir"] == str(temp_dir)
+    assert new["target_folder"] == "Inbox"
+
+
+def test_retry_410_when_temp_dir_gone(app, monkeypatch, tmp_path):
+    """temp_dir 已被 purge -> 410。"""
+    from zimport.store import TaskStore
+    store = TaskStore(str(tmp_path / "t.db"))
+    old_id = store.create_task(account="u@d", requester="u@d",
+                                target_folder="Inbox",
+                                temp_dir=str(tmp_path / "gone"))
+    store.set_status(old_id, "failed", error="boom")
+    client = _login(app, monkeypatch)
+    assert client.post("/api/tasks/" + old_id + "/retry").status_code == 410
+
+
+def test_retry_403_for_other_user(app, monkeypatch, tmp_path):
+    """非 requester 且非 admin 不能重试他人任务。"""
+    from zimport.store import TaskStore
+    store = TaskStore(str(tmp_path / "t.db"))
+    td = tmp_path / "td"; td.mkdir()
+    old_id = store.create_task(account="other@d", requester="other@d",
+                                target_folder="Inbox", temp_dir=str(td))
+    store.set_status(old_id, "failed")
+    client = _login(app, monkeypatch)  # 登的是 u@d,不是 other@d
+    assert client.post("/api/tasks/" + old_id + "/retry").status_code == 403
+
+
+def test_retry_404_when_missing(app, monkeypatch):
+    client = _login(app, monkeypatch)
+    assert client.post("/api/tasks/nosuch/retry").status_code == 404
+
+
+def test_retry_400_when_status_not_failed(app, monkeypatch, tmp_path):
+    """status=queued/done/running 都不应该让重试。"""
+    client = _login(app, monkeypatch)
+    # 用 /api/upload + /api/import 造一个 queued 任务
+    monkeypatch.setattr(web.uploads, "input_dir",
+                        lambda root, uid: str(tmp_path))
+    monkeypatch.setattr(web.uploads, "upload_dir",
+                        lambda root, uid: str(tmp_path))
+    monkeypatch.setattr(web.uploads, "merge_file",
+                        lambda *a, **kw: None)
+    monkeypatch.setattr(web.os, "listdir", lambda p: [])  # 0 字节
+    init = client.post("/api/upload/init").get_json()
+    r = client.post("/api/import", json={
+        "upload_id": init["upload_id"], "files": [], "folder": "Inbox"})
+    task_id = r.get_json()["task_id"]
+    resp = client.post("/api/tasks/" + task_id + "/retry")
+    assert resp.status_code == 400
+
+
 def test_admin_account_search_returns_results(app, monkeypatch):
     monkeypatch.setattr(web.zimbra_auth, "login",
                         lambda cfg, u, p: zimbra_auth.Identity(True, u))

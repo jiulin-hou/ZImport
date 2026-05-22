@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import time
 import shutil
@@ -9,10 +10,31 @@ from zimport.config import Config
 from zimport.store import TaskStore
 
 
+# 仅对 transient 错误 retry —— 网络抖、Zimbra 临时 5xx、限流 429/408
+_TRANSIENT_RE = re.compile(r"^network:|HTTP 5\d\d|HTTP 429|HTTP 408")
+
+
+def _inject_eml_with_retry(cfg, account, folder, token, path,
+                            max_retries=2):
+    """Inject one eml with up to max_retries additional attempts on
+    transient errors (1.5s, 2.25s backoff). Non-transient errors raise
+    immediately."""
+    for attempt in range(max_retries + 1):
+        try:
+            zimbra_inject.inject_eml(cfg, account, folder, token, path)
+            return
+        except zimbra_inject.InjectError as exc:
+            if attempt == max_retries or not _TRANSIENT_RE.search(str(exc)):
+                raise
+            time.sleep(1.5 ** (attempt + 1))
+
+
 def process_task(cfg, store, task):
     tid = task["id"]
     try:
+        # retry 时 work 可能残留旧产物,清掉再 normalize 一遍
         work = os.path.join(task["temp_dir"], "work")
+        shutil.rmtree(work, ignore_errors=True)
         os.makedirs(work, exist_ok=True)
         norm = archive.normalize(os.path.join(task["temp_dir"], "input"), work)
         store.set_status(tid, "running", kind=norm.kind)
@@ -52,9 +74,9 @@ def process_task(cfg, store, task):
                                                       failed=failed,
                                                       skipped=skipped)
                                 continue
-                    zimbra_inject.inject_eml(cfg, task["account"],
-                                             task["target_folder"],
-                                             token, path)
+                    _inject_eml_with_retry(cfg, task["account"],
+                                           task["target_folder"],
+                                           token, path)
                     done += 1
                 except zimbra_inject.InjectError as exc:
                     failed += 1

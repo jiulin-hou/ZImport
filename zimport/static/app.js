@@ -257,12 +257,18 @@ async function refreshTasks() {
     tasks = await (await api("/api/tasks")).json();
   } catch (e) { return; }
   const tbody = $("tasks").querySelector("tbody");
+  // 记录展开状态,刷新后保留
+  const expanded = new Set();
+  tbody.querySelectorAll("tr.task-detail:not(.hidden)").forEach(r => {
+    if (r.dataset.id) expanded.add(r.dataset.id);
+  });
   tbody.innerHTML = "";
   let anyActive = false;
   for (const t of tasks) {
     if (t.status === "queued" || t.status === "running") anyActive = true;
     const pct = t.total ? Math.round(100 * t.done / t.total) : 0;
     const tr = document.createElement("tr");
+    tr.className = "task-row";
     tr.innerHTML =
       `<td><code>${t.id.slice(0, 8)}</code></td>` +
       `<td>${escapeHtml(t.account)}</td>` +
@@ -272,14 +278,79 @@ async function refreshTasks() {
       `style="width:${pct}%"></div></div> ${t.done}/${t.total}</td>` +
       `<td>${t.skipped || 0}</td>` +
       `<td>${t.failed}</td>`;
+    const detail = document.createElement("tr");
+    detail.className = "task-detail" + (expanded.has(t.id) ? "" : " hidden");
+    detail.dataset.id = t.id;
+    const td = document.createElement("td");
+    td.colSpan = 6;
+    td.appendChild(buildTaskDetail(t));
+    detail.appendChild(td);
+    tr.onclick = () => detail.classList.toggle("hidden");
     tbody.appendChild(tr);
+    tbody.appendChild(detail);
   }
   $("emptyTasks").classList.toggle("hidden", tasks.length > 0);
-  // 有活跃任务时轮询;无活跃时停轮询
   if (anyActive && !pollTimer) {
     pollTimer = setInterval(refreshTasks, 3000);
   } else if (!anyActive && pollTimer) {
     clearInterval(pollTimer); pollTimer = null;
+  }
+}
+
+function buildTaskDetail(t) {
+  const box = document.createElement("div");
+  box.className = "task-detail-body";
+  if (t.error) {
+    const p = document.createElement("p");
+    p.className = "err";
+    p.textContent = "任务错误:" + t.error;
+    box.appendChild(p);
+  }
+  let failures = [];
+  if (t.failures) {
+    try { failures = JSON.parse(t.failures) || []; } catch (_) {}
+  }
+  if (failures.length > 0) {
+    const h = document.createElement("h4");
+    h.textContent = "明细 (" + failures.length + ")";
+    box.appendChild(h);
+    const ul = document.createElement("ul");
+    for (const f of failures) {
+      const li = document.createElement("li");
+      const code = document.createElement("code");
+      code.textContent = f.name;
+      li.appendChild(code);
+      li.appendChild(document.createTextNode(" — " + (f.reason || "")));
+      ul.appendChild(li);
+    }
+    box.appendChild(ul);
+  }
+  if (t.status === "failed" || t.status === "interrupted") {
+    const btn = document.createElement("button");
+    btn.className = "primary";
+    btn.textContent = "重试";
+    btn.onclick = (ev) => { ev.stopPropagation(); doRetry(t.id); };
+    box.appendChild(btn);
+  }
+  if (box.children.length === 0) {
+    const p = document.createElement("p");
+    p.className = "muted";
+    p.textContent = "无更多详情";
+    box.appendChild(p);
+  }
+  return box;
+}
+
+async function doRetry(id) {
+  try {
+    const r = await api("/api/tasks/" + encodeURIComponent(id) + "/retry",
+                        {method: "POST"});
+    const data = await r.json();
+    if (!r.ok) { toast(data.error || "重试失败", "err"); return; }
+    toast("重试任务已入队: " + data.task_id.slice(0, 8), "ok");
+    refreshTasks();
+  } catch (e) {
+    if (e.message !== "未登录") toast(e.message, "err");
   }
 }
 
