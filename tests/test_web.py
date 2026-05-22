@@ -49,6 +49,42 @@ def test_tasks_requires_login(app):
     assert client.get("/api/tasks").status_code == 401
 
 
+def test_folders_returns_paths(app, monkeypatch):
+    monkeypatch.setattr(web.zimbra_auth, "delegate_token",
+                        lambda cfg, acc: "TOK")
+    monkeypatch.setattr(web.zimbra_folders, "list_folders",
+                        lambda cfg, tok: ["Inbox", "Sent"])
+    client = _login(app, monkeypatch)
+    resp = client.get("/api/folders")
+    assert resp.status_code == 200
+    assert resp.get_json()["folders"] == ["Inbox", "Sent"]
+
+
+def test_folders_forbidden_for_non_admin_other_account(app, monkeypatch):
+    client = _login(app, monkeypatch)
+    resp = client.get("/api/folders?account=other@d")
+    assert resp.status_code == 403
+
+
+def test_admin_account_search_requires_admin(app, monkeypatch):
+    # 普通用户登录
+    client = _login(app, monkeypatch)
+    resp = client.get("/api/admin/accounts/search?q=al")
+    assert resp.status_code == 403
+
+
+def test_admin_account_search_returns_results(app, monkeypatch):
+    monkeypatch.setattr(web.zimbra_auth, "login",
+                        lambda cfg, u, p: zimbra_auth.Identity(True, u))
+    monkeypatch.setattr(web.zimbra_search, "search_accounts",
+                        lambda cfg, q: [{"name": "a@d", "display": "A"}])
+    client = app.test_client()
+    client.post("/api/login", json={"username": "admin@d", "password": "x"})
+    resp = client.get("/api/admin/accounts/search?q=ali")
+    assert resp.status_code == 200
+    assert resp.get_json()["accounts"][0]["name"] == "a@d"
+
+
 def _login(app, monkeypatch):
     monkeypatch.setattr(web.zimbra_auth, "login",
                         lambda cfg, u, p: zimbra_auth.Identity(False, u))

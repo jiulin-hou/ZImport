@@ -5,7 +5,8 @@ import functools
 
 from flask import Flask, request, session, jsonify, send_from_directory
 
-from zimport import zimbra_auth, uploads, archive
+from zimport import (zimbra_auth, zimbra_folders, zimbra_search,
+                     uploads, archive)
 from zimport.store import TaskStore
 
 _STATIC = os.path.join(os.path.dirname(__file__), "static")
@@ -71,6 +72,32 @@ def create_app(cfg):
         if task is None or task["requester"] != session["account"]:
             return jsonify({"error": "任务不存在"}), 404
         return jsonify(task)
+
+    @app.route("/api/folders")
+    @login_required
+    def folders():
+        account = request.args.get("account") or session["account"]
+        if account != session["account"] and not session.get("is_admin"):
+            return jsonify({"error": "无权查询此账户"}), 403
+        try:
+            tok = zimbra_auth.delegate_token(cfg, account)
+            paths = zimbra_folders.list_folders(cfg, tok)
+            return jsonify({"folders": paths})
+        except (zimbra_auth.AuthError,
+                zimbra_folders.FolderError) as exc:
+            return jsonify({"error": str(exc)}), 502
+
+    @app.route("/api/admin/accounts/search")
+    @login_required
+    def admin_account_search():
+        if not session.get("is_admin"):
+            return jsonify({"error": "仅管理员可用"}), 403
+        q = request.args.get("q", "")
+        try:
+            results = zimbra_search.search_accounts(cfg, q)
+            return jsonify({"accounts": results})
+        except zimbra_search.SearchError as exc:
+            return jsonify({"error": str(exc)}), 502
 
     # 上传与导入端点在 Task 13 / 14 注册
     _register_uploads(app, cfg, store, login_required)

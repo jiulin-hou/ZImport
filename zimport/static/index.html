@@ -7,33 +7,75 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <div id="login" class="card">
-    <h2>Zimbra 数据导入</h2>
-    <input id="username" placeholder="账号 (name@msauto.com.cn)">
-    <input id="password" type="password" placeholder="密码">
-    <button id="loginBtn">登录</button>
-    <p id="loginErr" class="err"></p>
-  </div>
-
-  <div id="main" class="card hidden">
-    <p>当前登录:<b id="who"></b> <button id="logoutBtn">退出</button></p>
-    <div id="adminBox" class="hidden">
-      <label>目标账户(管理员):<input id="targetAccount"
-        placeholder="留空=导入到自己"></label>
+  <header class="topbar">
+    <h1>Zimbra 数据导入</h1>
+    <div id="userbar" class="userbar hidden">
+      <span id="who"></span>
+      <span id="adminBadge" class="badge hidden">管理员</span>
+      <button id="logoutBtn" class="ghost">退出</button>
     </div>
-    <label>目标文件夹:<input id="folder" value="Inbox"></label>
-    <label>选择文件(多个 .eml 或一个 .tgz):
-      <input id="files" type="file" multiple accept=".eml,.tgz,.tar.gz">
-    </label>
-    <button id="startBtn">开始导入</button>
-    <div id="uploadProgress"></div>
+  </header>
 
-    <h3>我的任务</h3>
-    <button id="refreshBtn">刷新</button>
-    <table id="tasks"><thead><tr>
-      <th>任务</th><th>账户</th><th>状态</th><th>进度</th><th>失败</th>
-    </tr></thead><tbody></tbody></table>
-  </div>
+  <main>
+    <section id="login" class="card">
+      <h2>登录</h2>
+      <label>账号
+        <input id="username" type="text" autocomplete="username"
+               placeholder="name@example.com">
+      </label>
+      <label>密码
+        <input id="password" type="password" autocomplete="current-password">
+      </label>
+      <button id="loginBtn" class="primary">登录</button>
+      <p id="loginErr" class="err"></p>
+    </section>
+
+    <section id="main" class="card hidden">
+      <h2>导入</h2>
+
+      <div id="adminBox" class="hidden">
+        <label>目标账户(留空 = 导入到自己)
+          <input id="targetAccount" type="search" list="accountList"
+                 autocomplete="off" placeholder="输入 2 个字符开始搜索…">
+          <datalist id="accountList"></datalist>
+        </label>
+      </div>
+
+      <label>目标文件夹
+        <select id="folder">
+          <option value="Inbox">Inbox</option>
+        </select>
+      </label>
+
+      <label>选择文件(多个 .eml 或一个 .tgz)
+        <input id="files" type="file" multiple accept=".eml,.tgz,.tar.gz">
+      </label>
+
+      <div class="actions">
+        <button id="startBtn" class="primary">开始导入</button>
+      </div>
+
+      <div id="uploadProgress" class="upload-progress hidden">
+        <div class="upload-label"></div>
+        <div class="bar"><div class="bar-fill"></div></div>
+      </div>
+
+      <h3>我的任务</h3>
+      <div class="task-toolbar">
+        <button id="refreshBtn" class="ghost">刷新</button>
+      </div>
+      <table id="tasks">
+        <thead><tr>
+          <th>任务</th><th>账户</th><th>状态</th>
+          <th>进度</th><th>跳过</th><th>失败</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+      <p id="emptyTasks" class="muted hidden">暂无任务</p>
+    </section>
+  </main>
+
+  <div id="toastHost" class="toast-host"></div>
 
   <script src="/static/app.js"></script>
 </body>

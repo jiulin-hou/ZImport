@@ -40,7 +40,8 @@ def login(cfg, username, password):
     return Identity(is_admin=False, account=username)
 
 
-def _admin_token(cfg):
+def admin_token(cfg):
+    """以服务账号取得 admin authToken,供其它需要管理员凭据的模块复用。"""
     body = {"AuthRequest": {"_jsns": "urn:zimbraAdmin",
                             "name": cfg.svc_name,
                             "password": cfg.svc_password}}
@@ -48,9 +49,12 @@ def _admin_token(cfg):
     return resp["AuthResponse"]["authToken"][0]["_content"]
 
 
+_admin_token = admin_token  # 兼容旧引用
+
+
 def delegate_token(cfg, target_account):
     """用服务账号取得目标账户的委托 token。worker 注入前即时调用。"""
-    admin_tok = _admin_token(cfg)
+    admin_tok = admin_token(cfg)
     header = {"context": {"_jsns": "urn:zimbra",
                           "authToken": {"_content": admin_tok}}}
     body = {"DelegateAuthRequest": {
