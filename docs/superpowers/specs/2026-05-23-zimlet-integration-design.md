@@ -1,5 +1,12 @@
 # ZImport · Zimbra Web 集成(Zimlet)— 设计文档
 
+> **⚠️ 本文档已被取代,作为历史记录保留。**
+>
+> 设计经过讨论后改为「独立姊妹项目」形态,见
+> [`2026-05-23-zimport-tools-design.md`](./2026-05-23-zimport-tools-design.md)。
+> 主要差异:不再在 standalone ZImport 上加 Zimlet 模式(双认证并存),
+> 改为另起仓库 `ZImport-tools`,只走 Zimbra cookie 认证、无登录回退。
+
 | 项目 | 内容 |
 |---|---|
 | 文档日期 | 2026-05-23 |
